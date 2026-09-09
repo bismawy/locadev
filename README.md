@@ -19,6 +19,8 @@ A self-contained local web development environment — FrankenPHP, Caddy & Maria
 
 </div>
 
+<img src="design/locadev-dashboard.png" alt="Locadev dashboard" width="100%">
+
 ## Features
 
 - **One Folder, Everything Included:** FrankenPHP + Caddy + PHP and MariaDB bundled in a single directory on Windows; Linux/macOS fetch the matching official static binaries.
