@@ -1,6 +1,9 @@
 <div align="center">
 
-  <img src="dashboard/assets/locadev.svg" alt="Locadev" width="280">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="dashboard/assets/locadev-white.svg">
+    <img src="dashboard/assets/locadev.svg" alt="Locadev" width="280">
+  </picture>
 
 # Locadev
 
