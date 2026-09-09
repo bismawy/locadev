@@ -36,21 +36,20 @@ function hx_toast(string $message, bool $isError = false): void {
 
 /** The 4 metric cards (inner content of #metrics). Arnative StatCard pattern. */
 function render_metric_cards(array $st): string {
-    $card = function (string $title, string $value, string $sub, string $icon): string {
+    $card = function (string $title, string $value, string $sub): string {
         return '<div class="metric-card">'
             . '<div class="metric-info">'
             . '<div class="metric-title">' . e($title) . '</div>'
             . '<div class="metric-value">' . e($value) . '</div>'
             . '<div class="metric-sub">' . e($sub) . '</div>'
             . '</div>'
-            . '<span class="metric-icon">' . ico($icon, 20) . '</span>'
             . '</div>';
     };
     return ''
-        . $card('Active Sites', (string) (int) $st['active_sites'], 'Total ' . (int) $st['total_sites'] . ' sites configured', 'language')
-        . $card('MariaDB Databases', (string) (int) $st['db_count'], 'Port 3306', 'database')
-        . $card('PHP Runtime', 'PHP ' . ($st['php_version'] ?: 'PHP'), ($st['os'] ?: 'Native') . ' • FrankenPHP Engine', 'terminal')
-        . $card('Admin API', 'Port 2019', 'Zero-downtime hot reload', 'api');
+        . $card('Active Sites', (string) (int) $st['active_sites'], 'Total ' . (int) $st['total_sites'] . ' sites configured')
+        . $card('MariaDB Databases', (string) (int) $st['db_count'], 'Port 3306')
+        . $card('PHP Runtime', 'PHP ' . ($st['php_version'] ?: 'PHP'), ($st['os'] ?: 'Native') . ' • FrankenPHP Engine')
+        . $card('Admin API', 'Port 2019', 'Zero-downtime hot reload');
 }
 
 /** OOB fragment: refresh metric cards + topbar status dots. For the status poller (hx-swap="none"). */

@@ -19,7 +19,7 @@ A self-contained local web development environment — FrankenPHP, Caddy & Maria
 
 </div>
 
-<img src="design/locadev-dashboard.png" alt="Locadev dashboard" width="100%">
+<img src="design/banner.webp" alt="Locadev dashboard" width="100%">
 
 ## Features
 
