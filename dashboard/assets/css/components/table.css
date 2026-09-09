@@ -1,0 +1,128 @@
+/* ============================================================
+   Tables
+   ============================================================ */
+
+.table-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: visible; /* dropdown menu custom-select butuh ruang keluar container */
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+}
+/* Sudut membulat dipindah ke sel-sel sudut (pengganti overflow:hidden) */
+thead th:first-child { border-top-left-radius: calc(var(--radius-lg) - 1px); }
+thead th:last-child { border-top-right-radius: calc(var(--radius-lg) - 1px); }
+tbody tr:last-child td:first-child { border-bottom-left-radius: calc(var(--radius-lg) - 1px); }
+tbody tr:last-child td:last-child { border-bottom-right-radius: calc(var(--radius-lg) - 1px); }
+table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.8125rem;
+}
+th {
+  padding: 0.75rem 1.125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--table-header);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Kolom aksi: beri ruang napas lebih dari tepi kanan container */
+th:last-child,
+td:last-child {
+  padding-right: 1.5rem;
+}
+td {
+  padding: 0.75rem 1.125rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 3.25rem;
+}
+/* Sel yang berisi dropdown: jangan clip — menu select-menu keluar dari sel
+   (pola inline yang sama dgn dropdown preset di modal New Site) */
+td:has(.custom-select) {
+  overflow: visible;
+  text-overflow: clip;
+}
+tr {
+  height: 3.25rem;
+}
+tr:last-child td {
+  border-bottom: none;
+}
+tr:hover td {
+  background: var(--table-row-hover);
+}
+
+.table-col-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.cell-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.cell-name .table-col-text {
+  font-weight: 600;
+  color: var(--foreground-strong);
+}
+.cell-muted {
+  color: var(--muted-foreground);
+}
+.db-name-cell {
+  font-weight: 500;
+  font-family: monospace;
+}
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+.empty-cell {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 3rem 1rem !important;
+  height: auto;
+}
+.empty-cell p {
+  margin-bottom: 0.75rem;
+}
+
+.site-domain-link {
+  color: var(--foreground-strong);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-family: monospace;
+  font-size: 0.8125rem;
+}
+.site-domain-link:hover {
+  text-decoration: underline;
+}
+.site-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted-foreground);
+  font-family: monospace;
+  font-size: 0.75rem;
+}

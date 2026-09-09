@@ -1,0 +1,203 @@
+/* ============================================================
+   Locadev Dashboard — Tokens & Base (warna OKLCH, reset, transisi dasar)
+   Fonts are self-hosted (offline-first); icons via inline SVG
+   sprite (assets/icons.svg) — Arnative production pattern.
+   ============================================================ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/inter.woff2') format('woff2');
+}
+
+/* Material Symbols SVG icon (weight 400, fill = currentColor via attribute) */
+.msr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  fill: currentColor;
+}
+
+/* Filled variant: visibility via opacity (crossfade), default state diatur konteks pemakaian (mis. .nav-item) */
+.msr-fill {
+  opacity: 0;
+}
+
+:root {
+  color-scheme: light;
+
+  /* --- 1. Base Neutral Canvas (Arnative Warm Paper — warm + netral seimbang, hue 106) --- */
+  --background: oklch(0.9878 0.0013 106.4);
+  --foreground: oklch(0.213 0.0019 106.6);
+  --card: oklch(1 0 0);
+  --popover: oklch(1 0 0);
+  --muted: oklch(0.9628 0.0066 106.5);
+  --muted-foreground: oklch(0.5375 0.0078 97.4);
+  --accent: oklch(0.9202 0.008 106.6);
+  --border: oklch(0.9296 0.0067 106.5);
+  --radius: 0.75rem;
+
+  /* --- 2. Primary Accent (Arnative Monochrome Slate — mengikuti tema) --- */
+  --primary: oklch(0.20 0.01 260);
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-hover: oklch(0.30 0.01 260); /* WAJIB didefinisikan — invalid var() = background hover transparan */
+  --primary-tint: oklch(from var(--primary) l c h / 0.08);
+  --primary-ring: oklch(from var(--primary) l c h / 0.16);
+
+  /* --- 3. Semantic Feedback Tokens --- */
+  --success: oklch(0.60 0.16 150);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.20 0.04 75);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --info: oklch(0.60 0.16 250);
+  --info-foreground: oklch(0.99 0 0);
+
+  /* --- 4. Aliased & Derived Tokens (DRY) --- */
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --input: var(--border);
+  --input-hover: oklch(0.8 0.008 106.5); /* hover/fokus field: antara border & fg, tidak mencolok */
+  --field-bg: var(--card);
+  --ring: var(--primary);
+
+  /* Sidebar Tokens (Mewarisi Surface & Aksen secara otomatis) */
+  --sidebar: var(--muted);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-w: 15rem;
+  --header-h: 3.5rem; /* shared header row height — sidebar-head & app-header wajib sama tinggi (border-box) */
+  --header-control-h: 2.125rem; /* tinggi kontrol sejajar di baris header: btn-header, server-status-group, icon-btn header/sidebar-head */
+
+  /* Legacy alias helper variables mapped to Arnative tokens */
+  --bg: var(--background);
+  --card-hover: var(--muted);
+  --header-bg: oklch(from var(--background) l c h / 0.85);
+  --border-subtle: var(--muted);
+  --foreground-strong: var(--foreground);
+  --primary-fg: var(--primary-foreground);
+  --secondary-bg: var(--secondary);
+  --secondary-hover: var(--accent);
+  --modal-bg: var(--card);
+  --item-hover: oklch(from var(--accent) l c h / 0.5);
+  --item-active: var(--accent);
+  --table-header: var(--muted);
+  --table-row-hover: oklch(from var(--foreground) l c h / 0.02);
+  --danger: var(--destructive);
+  --danger-fg: var(--destructive);
+  --danger-bg: oklch(from var(--destructive) l c h / 0.1);
+  --shadow-xs: 0 1px 0.125rem 0 rgb(0 0 0 / 0.04);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem; /* kontrol interaktif: tombol, input, nav item (Arnative rounded-lg) */
+  --radius-lg: var(--radius);
+
+  --sidebar-bg: var(--sidebar);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* --- Base Neutral Canvas (Arnative Dark — Warm Paper) --- */
+  --background: oklch(0.2009 0.0025 67.7);
+  --foreground: oklch(0.9639 0.0013 106.4);
+  --card: oklch(0.2311 0.0041 84.6);
+  --popover: oklch(0.1875 0.0026 67.7);
+  --muted: oklch(0.2396 0.004 84.6);
+  --muted-foreground: oklch(0.7149 0.0029 106.5);
+  --accent: oklch(0.2731 0.0039 84.6);
+  --border: oklch(0.2853 0.0039 84.6);
+
+  /* --- Primary Accent (Arnative Dark: Monochrome Slate) --- */
+  --primary: oklch(0.94 0.01 260);
+  --primary-foreground: oklch(0.18 0.01 260);
+  --primary-hover: oklch(1 0 0); /* putih penuh saat hover di dark */
+  --primary-tint: oklch(from var(--primary) l c h / 0.10);
+  --primary-ring: oklch(from var(--primary) l c h / 0.20);
+
+  /* --- Semantic Feedback (Dark) --- */
+  --success: oklch(0.74 0.16 150);
+  --success-foreground: oklch(0.18 0.04 150);
+  --warning: oklch(0.79 0.15 75);
+  --warning-foreground: oklch(0.18 0.04 75);
+  --destructive: oklch(0.70 0.19 25);
+  --destructive-foreground: oklch(0.18 0.04 25);
+  --info: oklch(0.74 0.15 250);
+  --info-foreground: oklch(0.18 0.04 250);
+
+  /* Input dark butuh kontras lebih dari card agar border terlihat saat idle */
+  --input: var(--border); /* halus — cukup terlihat karena field recessed (bg 0.19) */
+  --input-hover: oklch(0.45 0.004 84.6);
+  /* Field recessed: lebih gelap dari card/modal (input, select, filter) */
+  --field-bg: oklch(0.19 0.004 84.6);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg);
+  color: var(--foreground);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  font-size: 0.875rem;
+}
+
+/* Skip link (WCAG 2.4.1): tersembunyi, muncul saat keyboard focus */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 2000;
+  padding: 0.5rem 1rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-size: 0.875rem;
+  transform: translateY(-300%);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* Fokus-angka: semua data numerik & pagination pakai tabular-nums */
+.table-pagination,
+.pagination-page-btn,
+.cell-muted,
+.metric-sub,
+.status-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Transisi Dasar — fade 0.15s ease (satu sumber)
+   Semua kontrol interaktif mewarisi dari sini. Komponen dengan
+   kebutuhan khusus (dialog, progress, sidebar) override sendiri.
+   ============================================================ */
+button,
+a,
+.btn, .icon-btn, .nav-item, .pill-btn, .pagination-page-btn,
+.nav-item .msr, .nav-item .msr-fill,
+.form-input, .select-trigger, .select-item, .select-arrow,
+.theme-menu-item, .step-item, .toast,
+.slider, .slider::before,
+.dot, .metric-card, .sidebar-backdrop {
+  transition: opacity 0.15s ease, transform 0.15s ease,
+              background-color 0.15s ease, border-color 0.15s ease,
+              color 0.15s ease;
+}

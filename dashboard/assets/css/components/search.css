@@ -1,0 +1,26 @@
+/* ============================================================
+   Search box: icon + input (komponen render_search())
+   ============================================================ */
+
+.search-box {
+  position: relative;
+  display: inline-flex;
+}
+.search-box .msr {
+  position: absolute;
+  left: 0.625rem;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.search-box .form-input {
+  width: 11rem;
+  height: 2.125rem; /* sejajar filter pills (1.625rem + border/padding = 2.125rem) & tombol toolbar */
+  font-size: 0.75rem;
+  padding-left: 2rem;
+  box-sizing: border-box;
+}
+.search-box .form-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}

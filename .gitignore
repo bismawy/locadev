@@ -1,0 +1,22 @@
+# ===== Binaries: never commit (downloaded by installers per OS:ARCH) =====
+bin/*
+!bin/locadev
+!bin/locadev.cmd
+
+# ===== User data: created at runtime, survives upgrades =====
+data/
+sites/*
+!sites/.gitkeep
+config/sites.json
+config/sites/*.caddy
+
+# ===== Maintainer build output =====
+dist/
+
+# ===== OS / editor noise =====
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+.verify-*.png

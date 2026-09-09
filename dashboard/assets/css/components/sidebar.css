@@ -1,0 +1,275 @@
+/* ============================================================
+   App shell: sidebar + main column
+   ============================================================ */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease;
+  overflow: hidden;
+  z-index: 50;
+}
+
+/* Arnative smooth slide: sidebar geser keluar ke kiri, tetap terlihat selama animasi */
+body.sidebar-collapsed .sidebar {
+  transform: translateX(-100%);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  height: var(--header-h); /* border-box: 3.4375rem konten + 1px border = sama presis dengan .app-header */
+  border-bottom: 1px solid var(--sidebar-border);
+  box-sizing: border-box;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.brand-logo {
+  height: 1.5rem;
+  width: 1.5rem;
+  display: block;
+  flex-shrink: 0;
+}
+html:not(.dark) .brand-logo {
+  filter: invert(1);
+}
+.dark .brand-logo {
+  filter: none;
+}
+
+.brand-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--sidebar-foreground);
+  white-space: nowrap;
+}
+
+.icon-btn {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+/* Flush alignment: icon-btn yang berbagi baris dengan kontrol header 2.125rem
+   (pill status, tombol Reload/New Site) wajib sama tinggi agar hover
+   background-nya sejajar presisi dengan blok lain. */
+.sidebar-head .icon-btn,
+.app-header .icon-btn {
+  width: var(--header-control-h);
+  height: var(--header-control-h);
+}
+.icon-btn:hover {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+}
+/* Varian destructive untuk aksi baris tabel (delete/drop) — icon-only, lebih minimal */
+.icon-btn-danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+/* Header expand button (dock_to_right Filled) - only visible when collapsed */
+.sidebar-expand-btn {
+  display: none;
+}
+body.sidebar-collapsed .sidebar-expand-btn {
+  display: inline-flex;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem 0.625rem;
+}
+
+/* Group header (sub-label) — memisahkan nav per kategori */
+.nav-group-label {
+  padding: 0.625rem 0.75rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.nav-item {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr; /* 2 ikon overlap di kolom 1, label di kolom 2 */
+  align-items: center;
+  column-gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+}
+.nav-item:hover {
+  background: oklch(from var(--sidebar-accent) l c h / 0.5);
+  color: var(--foreground);
+}
+.nav-item.active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+  font-weight: 600;
+}
+/* Crossfade + zoom antar pasangan ikon outlined ↔ filled (bukan display toggle) */
+.nav-item .msr,
+.nav-item .msr-fill {
+  grid-area: 1 / 1;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.nav-item .msr-fill {
+  opacity: 0;
+  transform: scale(0.8);
+  color: var(--primary);
+}
+.nav-item.active .msr {
+  opacity: 0;
+  transform: scale(0.8);
+}
+.nav-item.active .msr-fill {
+  opacity: 1;
+  transform: scale(1);
+}
+/* Reduced motion global (Arnative WAJIB): matikan transisi/animasi dekoratif */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Fokus berjenjang (Arnative):
+   - Kontrol tapil (btn, icon, nav, pill): outline ring 2px — hanya muncul via keyboard
+   - Field teks: border aksen tipis 1px, bukan outline tebal
+   - Toggle (checkbox, switch): halo lembut 3px tint, bukan outline keras */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.nav-item:focus-visible,
+.pagination-page-btn:focus-visible,
+.theme-btn:focus-visible,
+.pill-btn:focus-visible,
+.skip-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.form-input:focus-visible {
+  outline: none;
+  border-color: var(--input-hover); /* netral, jelas terlihat tapi tidak menyilaukan */
+}
+.select-trigger:focus-visible,
+.select-trigger:focus {
+  outline: none; /* tanpa indikator fokus: state open (menu nempel + chevron) sudah jadi feedback */
+}
+.form-checkbox:focus-visible,
+.slider:has(input:focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-ring);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.foot-versions {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+/* Pills status di footer: full width vertikal */
+.sidebar-foot .server-status-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+  gap: 0.375rem;
+  box-sizing: border-box;
+}
+.sidebar-foot .status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  width: 100%;
+}
+.sidebar-foot .status-port {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.sidebar-foot .status-separator {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin-left: var(--sidebar-w);
+  transition: margin-left 0.15s ease;
+}
+
+body.sidebar-collapsed .app-main {
+  margin-left: 0;
+}

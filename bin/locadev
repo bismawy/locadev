@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# Locadev CLI - portable across Windows (Git Bash), Linux, and macOS.
+LOCADEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+[ -f "$LOCADEV_DIR/Caddyfile" ] || LOCADEV_DIR="D:/Locadev"
+command -v cygpath >/dev/null 2>&1 && LOCADEV_DIR=$(cygpath -m "$LOCADEV_DIR")
+
+export PHPRC="$LOCADEV_DIR/bin"
+export PATH="$LOCADEV_DIR/bin:$LOCADEV_DIR/bin/mariadb/bin:$PATH"
+
+OS="$(uname -s)"
+MARIADB_ADMIN="$LOCADEV_DIR/bin/mariadb/bin/mariadb-admin.exe"
+[ -f "$MARIADB_ADMIN" ] || MARIADB_ADMIN="mariadb-admin"
+
+# ANSI Colors (only status/action tokens; the rest stays default)
+C_RESET=$'\e[0m'
+C_GREEN=$'\e[32m'
+C_RED=$'\e[31m'
+C_YELLOW=$'\e[33m'
+
+port_open() {
+    nc -z 127.0.0.1 "$1" 2>/dev/null && return 0
+    command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    ss -tlpn 2>/dev/null | grep -q ":$1 " && return 0
+    command -v netstat >/dev/null 2>&1 && netstat -ano 2>/dev/null | grep -q ":$1 .*LISTENING" && return 0
+    return 1
+}
+
+wait_port() {
+    local port="$1" tries=0 max="${2:-30}"
+    while ! port_open "$port"; do
+        tries=$((tries + 1))
+        [ "$tries" -ge "$max" ] && return 1
+        sleep 1
+    done
+}
+
+ensure_mariadb_data() {
+    [ -d "$LOCADEV_DIR/data/mariadb/mysql" ] && return 0
+    echo "${C_YELLOW}[Locadev] Initializing MariaDB data directory (first run)...${C_RESET}"
+    if command -v mariadb-install-db >/dev/null 2>&1; then
+        mariadb-install-db --datadir="$LOCADEV_DIR/data/mariadb" \
+            --auth-root-authentication-method=normal >/dev/null 2>&1
+    elif command -v mysql_install_db >/dev/null 2>&1; then
+        mysql_install_db --datadir="$LOCADEV_DIR/data/mariadb" \
+            --auth-root-authentication-method=normal >/dev/null 2>&1
+    fi
+}
+
+# ===== Action bodies (no banner / no summary) =====
+body_start() {
+    start_db
+    start_web
+}
+
+body_stop() {
+    echo "${C_YELLOW}[Locadev] Stopping services...${C_RESET}"
+    stop_cmds
+    echo "${C_GREEN}[Locadev] All services stopped.${C_RESET}"
+}
+
+body_restart() {
+    echo "${C_YELLOW}[Locadev] Stopping services...${C_RESET}"
+    stop_cmds
+    sleep 1
+    echo "${C_YELLOW}[Locadev] Starting services...${C_RESET}"
+    start_db
+    start_web
+}
+
+body_reload() {
+    echo "${C_YELLOW}[Locadev] Reloading Caddyfile...${C_RESET}"
+    if [ -f "$LOCADEV_DIR/bin/frankenphp.exe" ]; then
+        "$LOCADEV_DIR/bin/frankenphp.exe" reload --config "$LOCADEV_DIR/Caddyfile"
+    else
+        "$LOCADEV_DIR/bin/frankenphp" reload --config "$LOCADEV_DIR/Caddyfile"
+    fi
+    if [ $? -eq 0 ]; then
+        echo "${C_GREEN}[Locadev] Configuration reloaded.${C_RESET}"
+    else
+        echo "${C_RED}[Locadev] Reload failed. Is FrankenPHP running?${C_RESET}"
+    fi
+}
+
+open_dash() {
+    case "$OS" in
+        Darwin) open https://localhost ;;
+        MINGW*|MSYS*|CYGWIN*) start https://localhost ;;
+        *) xdg-open https://localhost 2>/dev/null || echo "Open in browser: https://localhost" ;;
+    esac
+}
+
+# ===== Shared helpers (single visual source) =====
+banner() {
+    echo "==================================================="
+    echo "  Locadev - Just runs. Natively."
+    echo "==================================================="
+}
+
+summary() {
+    if port_open 8080 || port_open 443; then
+        echo "  FrankenPHP : ${C_GREEN}[ONLINE]${C_RESET}   https://localhost"
+    else
+        echo "  FrankenPHP : ${C_RED}[OFFLINE]${C_RESET}"
+    fi
+    if port_open 3306; then
+        echo "  MariaDB    : ${C_GREEN}[ONLINE]${C_RESET}   127.0.0.1:3306"
+    else
+        echo "  MariaDB    : ${C_RED}[OFFLINE]${C_RESET}"
+    fi
+    echo "==================================================="
+}
+
+stop_cmds() {
+    curl -s -X POST http://127.0.0.1:2019/stop >/dev/null 2>&1
+    # wait for graceful shutdown (process gone), force-kill is only a fallback
+    local t=0
+    while tasklist //FI "IMAGENAME eq frankenphp.exe" 2>/dev/null | grep -q frankenphp; do
+        t=$((t + 1)); [ "$t" -ge 6 ] && break
+        sleep 1
+    done
+    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
+        taskkill //F //IM frankenphp.exe >/dev/null 2>&1
+    else
+        pkill -f frankenphp 2>/dev/null
+    fi
+    "$MARIADB_ADMIN" -h 127.0.0.1 -P 3306 -u root shutdown >/dev/null 2>&1
+    # port 3306 closes before InnoDB finishes flushing - wait for the PROCESS, not the port
+    t=0
+    while tasklist //FI "IMAGENAME eq mariadbd.exe" 2>/dev/null | grep -q mariadbd; do
+        t=$((t + 1)); [ "$t" -ge 11 ] && break
+        sleep 1
+    done
+    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
+        taskkill //F //IM mariadbd.exe >/dev/null 2>&1
+    else
+        pkill -f mariadbd 2>/dev/null
+        pkill -f mysqld 2>/dev/null
+    fi
+}
+
+ensure_db_files() {
+    # Windows-bundle first run: init datadir (must be EMPTY), then tuned my.ini
+    if [ ! -d "$LOCADEV_DIR/data/mariadb" ]; then mkdir -p "$LOCADEV_DIR/data/mariadb"; fi
+    local fresh=0
+    if [ ! -d "$LOCADEV_DIR/data/mariadb/mysql" ] && [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" ]; then
+        rm -f "$LOCADEV_DIR/data/mariadb/my.ini"
+        echo "${C_YELLOW}[Locadev] Initializing MariaDB data directory - first run...${C_RESET}"
+        "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" \
+            --datadir="$LOCADEV_DIR/data/mariadb" >/dev/null 2>&1
+        fresh=1
+    fi
+    [ -f "$LOCADEV_DIR/data/mariadb/my.ini" ] || fresh=1
+    if [ "$fresh" = 1 ]; then
+        echo "${C_YELLOW}[Locadev] Writing MariaDB config - first run...${C_RESET}"
+        cat > "$LOCADEV_DIR/data/mariadb/my.ini" <<INI
+[mysqld]
+datadir=$LOCADEV_DIR/data/mariadb
+port=3306
+bind-address=127.0.0.1
+innodb_use_native_aio=0
+lower_case_table_names=1
+max_allowed_packet=64M
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+performance_schema=OFF
+max_connections=20
+key_buffer_size=8M
+aria_pagecache_buffer_size=8M
+tmp_table_size=16M
+max_heap_table_size=16M
+innodb_flush_log_at_trx_commit=2
+innodb_flush_neighbors=0
+skip_name_resolve=1
+innodb_log_file_size=32M
+innodb_buffer_pool_size=64M
+[client]
+port=3306
+default-character-set=utf8mb4
+INI
+    fi
+    if [ ! -d "$LOCADEV_DIR/data/mariadb/mysql" ] && [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" ]; then
+        echo "${C_YELLOW}[Locadev] Initializing MariaDB data directory (first run)...${C_RESET}"
+        "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" \
+            --datadir="$LOCADEV_DIR/data/mariadb" >/dev/null 2>&1
+    fi
+}
+
+start_db() {
+    port_open 3306 && return 0
+    [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ] && ensure_db_files
+    echo "${C_YELLOW}[Locadev] Starting MariaDB...${C_RESET}"
+    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$LOCADEV_DIR\\bin\\mariadb\\bin\\mariadbd.exe' -ArgumentList '--defaults-file=\"\"$LOCADEV_DIR\\data\\mariadb\\my.ini\"\"' -WindowStyle Hidden" 2>/dev/null
+    elif command -v mariadbd >/dev/null 2>&1 || command -v mysqld >/dev/null 2>&1; then
+        DB_BIN="$(command -v mariadbd 2>/dev/null || command -v mysqld)"
+        ensure_mariadb_data
+        "$DB_BIN" --defaults-file="$LOCADEV_DIR/config/my.cnf" \
+            --datadir="$LOCADEV_DIR/data/mariadb" \
+            --socket="$LOCADEV_DIR/data/mariadb/mariadb.sock" \
+            >/dev/null 2>&1 &
+    else
+        echo "${C_RED}[Locadev] MariaDB not found.${C_RESET}"
+        return 1
+    fi
+    if wait_port 3306 30; then
+        return 0
+    else
+        echo "${C_RED}[Locadev] ERROR: MariaDB did not start within 30s. Check data/mariadb/*.err${C_RESET}"
+        return 1
+    fi
+}
+
+start_web() {
+    { port_open 8080 || port_open 443; } && return 0
+    echo "${C_YELLOW}[Locadev] Starting FrankenPHP...${C_RESET}"
+    if [ -f "$LOCADEV_DIR/bin/frankenphp.exe" ]; then
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "\$env:PHPRC='$LOCADEV_DIR\\bin'; Start-Process -FilePath '$LOCADEV_DIR\\bin\\frankenphp.exe' -ArgumentList 'run --config Caddyfile' -WorkingDirectory '$LOCADEV_DIR' -WindowStyle Hidden" 2>/dev/null
+    elif [ -x "$LOCADEV_DIR/bin/frankenphp" ]; then
+        (cd "$LOCADEV_DIR" && ./bin/frankenphp run --config Caddyfile > /dev/null 2>&1 &)
+    else
+        echo "${C_RED}[Locadev] FrankenPHP binary not found.${C_RESET}"
+        return 1
+    fi
+    if wait_port 8080 30; then
+        return 0
+    else
+        echo "${C_RED}[Locadev] ERROR: FrankenPHP did not start within 30s. Check the Caddyfile.${C_RESET}"
+        return 1
+    fi
+}
+
+ACTION="${1:-start}"
+
+case "$ACTION" in
+    start)
+        banner
+        body_start
+        echo
+        summary
+        ;;
+    stop)
+        banner
+        body_stop
+        summary
+        ;;
+    restart)
+        banner
+        body_restart
+        echo
+        summary
+        ;;
+    reload)
+        banner
+        body_reload
+        summary
+        ;;
+    status)
+        banner
+        summary
+        ;;
+    open)
+        open_dash
+        ;;
+    menu)
+        while true; do
+            banner
+            summary
+            echo "==================================================="
+            echo "   1) Start      2) Stop       3) Restart"
+            echo "   4) Reload     5) Status     6) Open"
+            echo "   0) Exit"
+            echo "==================================================="
+            if ! read -r -p "   Choose a number and press Enter: " choice; then
+                break
+            fi
+            case "$choice" in
+                0) break ;;
+                1) body_start ;;
+                2) body_stop ;;
+                3) body_restart ;;
+                4) body_reload ;;
+                6) open_dash ;;
+                *) ;;
+            esac
+            echo
+        done
+        ;;
+    help|--help|-h)
+        banner
+        echo "Usage: locadev [command]"
+        echo ""
+        echo "Commands:"
+        echo "  start       Start FrankenPHP and MariaDB in background (default)"
+        echo "  stop        Stop all Locadev services"
+        echo "  restart     Restart all Locadev services"
+        echo "  reload      Hot reload Caddyfile without downtime"
+        echo "  status      Show running status of services"
+        echo "  menu        Interactive control menu"
+        echo "  open        Open dashboard in default web browser"
+        ;;
+    *)
+        echo "${C_RED}[Locadev] Unknown command: $ACTION${C_RESET}"
+        echo "Usage: locadev [start|stop|restart|reload|status|open|menu]"
+        ;;
+esac

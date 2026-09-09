@@ -1,0 +1,84 @@
+/* ============================================================
+   Dialogs (native <dialog>)
+   ============================================================ */
+
+dialog.modal {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: 30rem;
+  width: calc(100% - 2rem);
+  margin: auto;
+  overflow: visible;
+  /* Buka/tutup native dialog: butuh @starting-style + allow-discrete */
+  opacity: 0;
+  transform: translateY(0.5rem) scale(0.98);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    overlay 0.15s allow-discrete,
+    display 0.15s allow-discrete;
+}
+dialog.modal[open] {
+  opacity: 1;
+  transform: none;
+}
+@starting-style {
+  dialog.modal[open] {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.98);
+  }
+}
+dialog.modal::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(0.25rem);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    overlay 0.15s allow-discrete,
+    display 0.15s allow-discrete;
+}
+dialog.modal[open]::backdrop {
+  opacity: 1;
+}
+@starting-style {
+  dialog.modal[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.modal-dialog {
+  background: var(--modal-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: 0 1.5625rem 3.125rem -0.75rem rgba(0, 0, 0, 0.5);
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+}
+
+.modal-header {
+  margin-bottom: 1.25rem;
+}
+.modal-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground-strong);
+}
+.modal-title.danger {
+  color: var(--danger-fg);
+}
+.modal-subtitle {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin-top: 0.25rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}

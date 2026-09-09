@@ -1,0 +1,29 @@
+{
+	frankenphp {
+		# 8 CPUs -> default would be 16 threads. 8 is plenty for local dev
+		# and keeps worst-case memory (8 x 256M memory_limit) well under RAM.
+		num_threads 8
+	}
+	# Loopback-only: the dashboard API has no auth and MariaDB root has no
+	# password, so never expose these ports to the LAN. Remove to allow LAN.
+	default_bind 127.0.0.1 ::1
+}
+
+# Locadev Manager Dashboard
+https://localhost, https://locadev.localhost, http://localhost:8080, http://locadev.localhost:8080 {
+	tls internal
+	root * ./dashboard
+	encode zstd gzip
+	header /assets/* Cache-Control "no-cache"
+	php_server
+}
+
+import config/sites/*.caddy
+
+# AdminNeo — DB management UI (loopback-only, same protection as dashboard)
+https://adminneo.localhost {
+	tls internal
+	root * ./data/adminer
+	encode zstd gzip
+	php_server
+}

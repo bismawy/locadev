@@ -1,0 +1,52 @@
+/* ============================================================
+   Pagination
+   ============================================================ */
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.125rem;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.pagination-ellipsis {
+  padding: 0 0.25rem;
+  color: var(--muted-foreground);
+}
+.pagination-page-btn {
+  min-width: 1.875rem;
+  height: 1.875rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  font-family: inherit;
+}
+.pagination-page-btn:hover:not(:disabled):not(.active) {
+  background: var(--secondary-hover);
+}
+.pagination-page-btn.active {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: var(--primary);
+}
+.pagination-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
