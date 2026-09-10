@@ -29,7 +29,8 @@ if ! nc -z 127.0.0.1 3306 2>/dev/null && ! lsof -nP -iTCP:3306 -sTCP:LISTEN >/de
         echo "[Locadev] Starting MariaDB..."
         # --datadir/--socket override the Windows paths inside config/my.cnf
         "$DB_BIN" --defaults-file="$PWD/config/my.cnf" \
-            --datadir="$PWD/data/mariadb" --socket="$PWD/data/mariadb/mariadb.sock" &
+            --datadir="$PWD/data/mariadb" \
+            --socket="${XDG_RUNTIME_DIR:-/tmp}/locadev-mariadb.sock" &
         MARIADB_PID=$!
         sleep 2
     else

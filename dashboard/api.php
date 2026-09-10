@@ -79,9 +79,11 @@ function delete_directory_recursive($dir) {
     }
     $real = realpath($dir);
     global $baseDir;
-    $realBase = realpath($baseDir);
-    // Safety check: only delete directories safely inside sites/
-    if (!$real || $real === $realBase || !str_starts_with($real, $realBase . DIRECTORY_SEPARATOR . 'sites')) {
+    // Safety check: only delete directories safely inside sites/.
+    // Resolve sites/ itself first - it may be a symlink (dual-boot shared sites).
+    $sitesBase = realpath($baseDir . DIRECTORY_SEPARATOR . 'sites');
+    if (!$real || !$sitesBase ||
+        ($real !== $sitesBase && !str_starts_with($real, $sitesBase . DIRECTORY_SEPARATOR))) {
         return;
     }
 

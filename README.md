@@ -55,7 +55,9 @@ curl -fsSL https://raw.githubusercontent.com/bismawy/locadev/main/install.sh | b
 
 - Installs to `~/locadev` (override with `LOCADEV_HOME=...`).
 - Downloads the official static FrankenPHP build for your architecture.
-- Needs `mariadb-server` from your package manager if it isn't already installed (`apt`, `pacman`, `dnf`…).
+- Installs MariaDB automatically via your package manager (`pacman`, `apt`, `dnf`, `zypper`) if missing.
+- Grants FrankenPHP permission to bind `:80`/`:443` without root (`setcap`). If that step is skipped, run:
+  `sudo setcap cap_net_bind_service=+ep ~/locadev/bin/frankenphp`
 
 </details>
 
@@ -67,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/bismawy/locadev/main/install.sh | b
 ```
 
 - Same installer as Linux; downloads the official macOS FrankenPHP build for your architecture.
-- Needs MariaDB: `brew install mariadb` (if not installed, Locadev tells you).
+- Installs MariaDB via Homebrew if missing.
 
 </details>
 
@@ -163,6 +165,33 @@ default_bind 127.0.0.1 ::1     # Caddy, admin API, and MariaDB: loopback only
 
 </details>
 
+## Dual-Boot: Same Sites on Windows & Linux
+
+Share **code and config** between OSes; each OS keeps its own database.
+
+1. Install Locadev on both OSes (each has its own `bin/` and `data/`).
+2. On Linux, point sites + config at the Windows install (adjust the path):
+
+```bash
+cd ~/locadev
+rm -rf sites config/sites config/sites.json
+ln -s /path/to/Locadev/sites sites
+ln -s /path/to/Locadev/config/sites config/sites
+ln -s /path/to/Locadev/config/sites.json config/sites.json
+```
+
+3. Copy the database once (the Windows original stays untouched):
+
+```bash
+locadev stop
+rm -rf ~/locadev/data/mariadb
+cp -a /path/to/Locadev/data/mariadb ~/locadev/data/mariadb
+locadev start
+mariadb-upgrade -h 127.0.0.1 -u root
+```
+
+After the one-time copy, **database changes are not synced** between OSes — re-copy (or dump/import) the datadir when you switch OSes and need the latest data.
+
 ## Troubleshooting
 
 <details>
@@ -175,7 +204,8 @@ locadev restart         # clean slate
 
 - MariaDB errors: check `data/mariadb/*.err`.
 - FrankenPHP errors: run `./bin/frankenphp run --config Caddyfile` in a terminal to see the output directly.
-- On Linux/macOS: is MariaDB installed (`command -v mariadbd`)? Is port 3306 already taken by a system service? A running system MariaDB is detected and reused.
+- On Linux: is port 3306 already taken by a system service? A running system MariaDB is detected and reused.
+- On Linux: `https://localhost` refuses to connect → `sudo setcap cap_net_bind_service=+ep bin/frankenphp` (non-root can't bind ports < 1024).
 
 </details>
 

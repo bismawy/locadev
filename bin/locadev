@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Locadev CLI - portable across Windows (Git Bash), Linux, and macOS.
-LOCADEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+# Resolve symlinks (~/.local/bin/locadev -> install dir) so LOCADEV_DIR points
+# at the real install, not the fallback path below.
+SELF="${BASH_SOURCE[0]}"
+command -v readlink >/dev/null 2>&1 && SELF="$(readlink -f "$SELF" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+LOCADEV_DIR="$(cd "$(dirname "$SELF")/.." 2>/dev/null && pwd)"
 [ -f "$LOCADEV_DIR/Caddyfile" ] || LOCADEV_DIR="D:/Locadev"
 command -v cygpath >/dev/null 2>&1 && LOCADEV_DIR=$(cygpath -m "$LOCADEV_DIR")
 
@@ -194,12 +198,22 @@ start_db() {
     elif command -v mariadbd >/dev/null 2>&1 || command -v mysqld >/dev/null 2>&1; then
         DB_BIN="$(command -v mariadbd 2>/dev/null || command -v mysqld)"
         ensure_mariadb_data
+        # ponytail: socket in /tmp - NTFS/FAT mounts (dual-boot drives) can't host unix sockets
         "$DB_BIN" --defaults-file="$LOCADEV_DIR/config/my.cnf" \
             --datadir="$LOCADEV_DIR/data/mariadb" \
-            --socket="$LOCADEV_DIR/data/mariadb/mariadb.sock" \
+            --socket="${XDG_RUNTIME_DIR:-/tmp}/locadev-mariadb.sock" \
             >/dev/null 2>&1 &
     else
         echo "${C_RED}[Locadev] MariaDB not found.${C_RESET}"
+        echo "Install it, then run 'locadev start' again:"
+        case "$(command -v pacman apt-get dnf zypper brew 2>/dev/null | head -n1)" in
+            *pacman)  echo "  sudo pacman -S --needed mariadb" ;;
+            *apt-get) echo "  sudo apt install mariadb-server" ;;
+            *dnf)     echo "  sudo dnf install mariadb-server" ;;
+            *zypper)  echo "  sudo zypper install mariadb-server" ;;
+            *brew)    echo "  brew install mariadb" ;;
+            *)        echo "  Install MariaDB (mariadb-server) with your package manager." ;;
+        esac
         return 1
     fi
     if wait_port 3306 30; then
