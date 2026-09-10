@@ -14,6 +14,10 @@ export PATH="$LOCADEV_DIR/bin:$LOCADEV_DIR/bin/mariadb/bin:$PATH"
 OS="$(uname -s)"
 MARIADB_ADMIN="$LOCADEV_DIR/bin/mariadb/bin/mariadb-admin.exe"
 [ -f "$MARIADB_ADMIN" ] || MARIADB_ADMIN="mariadb-admin"
+MARIADB_CLI="$LOCADEV_DIR/bin/mariadb/bin/mariadb.exe"
+[ -f "$MARIADB_CLI" ] || MARIADB_CLI="$(command -v mariadb || command -v mysql)"
+MARIADB_DUMP="$LOCADEV_DIR/bin/mariadb/bin/mariadb-dump.exe"
+[ -f "$MARIADB_DUMP" ] || MARIADB_DUMP="$(command -v mariadb-dump || command -v mysqldump)"
 
 # ANSI Colors (only status/action tokens; the rest stays default)
 C_RESET=$'\e[0m'
@@ -47,6 +51,50 @@ ensure_mariadb_data() {
     elif command -v mysql_install_db >/dev/null 2>&1; then
         mysql_install_db --datadir="$LOCADEV_DIR/data/mariadb" \
             --auth-root-authentication-method=normal >/dev/null 2>&1
+    fi
+}
+
+db_export() {
+    local out="${1:-$LOCADEV_DIR/data/db-sync.sql}"
+    if ! port_open 3306; then
+        echo "${C_RED}[Locadev] MariaDB is not running. Run 'locadev start' first.${C_RESET}"
+        return 1
+    fi
+    local dbs
+    dbs="$($MARIADB_CLI -h 127.0.0.1 -P 3306 -u root -N -B -e 'SHOW DATABASES' 2>/dev/null \
+        | grep -Ev '^(mysql|performance_schema|information_schema|sys)$')"
+    if [ -z "$dbs" ]; then
+        echo "${C_YELLOW}[Locadev] No user databases to export.${C_RESET}"
+        return 1
+    fi
+    mkdir -p "$(dirname "$out")" || return 1
+    echo "${C_YELLOW}[Locadev] Exporting databases to $out ...${C_RESET}"
+    # word-splitting of $dbs is intentional (space-separated db names)
+    if $MARIADB_DUMP -h 127.0.0.1 -P 3306 -u root --add-drop-database --databases $dbs > "$out"; then
+        echo "${C_GREEN}[Locadev] Export complete: $out${C_RESET}"
+    else
+        rm -f "$out"
+        echo "${C_RED}[Locadev] Export failed.${C_RESET}"
+        return 1
+    fi
+}
+
+db_import() {
+    local in="${1:-$LOCADEV_DIR/data/db-sync.sql}"
+    if ! port_open 3306; then
+        echo "${C_RED}[Locadev] MariaDB is not running. Run 'locadev start' first.${C_RESET}"
+        return 1
+    fi
+    if [ ! -f "$in" ]; then
+        echo "${C_RED}[Locadev] File not found: $in${C_RESET}"
+        return 1
+    fi
+    echo "${C_YELLOW}[Locadev] Importing $in (replaces the databases it contains) ...${C_RESET}"
+    if $MARIADB_CLI -h 127.0.0.1 -P 3306 -u root < "$in"; then
+        echo "${C_GREEN}[Locadev] Import complete.${C_RESET}"
+    else
+        echo "${C_RED}[Locadev] Import failed.${C_RESET}"
+        return 1
     fi
 }
 
@@ -275,6 +323,14 @@ case "$ACTION" in
     open)
         open_dash
         ;;
+    db-export)
+        banner
+        db_export "$2"
+        ;;
+    db-import)
+        banner
+        db_import "$2"
+        ;;
     menu)
         while true; do
             banner
@@ -309,11 +365,13 @@ case "$ACTION" in
         echo "  restart     Restart all Locadev services"
         echo "  reload      Hot reload Caddyfile without downtime"
         echo "  status      Show running status of services"
+        echo "  db-export   Dump all user databases to a .sql file (default data/db-sync.sql)"
+        echo "  db-import   Import a .sql dump, replacing the databases it contains"
         echo "  menu        Interactive control menu"
         echo "  open        Open dashboard in default web browser"
         ;;
     *)
         echo "${C_RED}[Locadev] Unknown command: $ACTION${C_RESET}"
-        echo "Usage: locadev [start|stop|restart|reload|status|open|menu]"
+        echo "Usage: locadev [start|stop|restart|reload|status|open|db-export|db-import|menu]"
         ;;
 esac

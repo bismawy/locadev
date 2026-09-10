@@ -108,6 +108,8 @@ Then, in the dashboard: **Create Site** → pick a preset (ClassicPress / WordPr
 | `locadev restart` | Restart all services |
 | `locadev reload` | Hot-reload the Caddy config with zero downtime |
 | `locadev status` | Check service status &amp; ports |
+| `locadev db-export [file]` | Dump all user databases to a `.sql` file (default `data/db-sync.sql`) |
+| `locadev db-import [file]` | Import a `.sql` dump, replacing the databases it contains |
 | `locadev menu` | Interactive control menu |
 | `locadev open` | Open the web dashboard in your browser |
 
@@ -190,7 +192,19 @@ locadev start
 mariadb-upgrade -h 127.0.0.1 -u root
 ```
 
-After the one-time copy, **database changes are not synced** between OSes — re-copy (or dump/import) the datadir when you switch OSes and need the latest data.
+### Moving database changes between OSes
+
+Site files are shared via the symlinks above, but each OS keeps its own database. To carry database changes across, dump on one side and import on the other (put the file anywhere both OSes can read, e.g. the shared drive):
+
+```bash
+# leaving this OS
+locadev db-export /path/to/Locadev/data/db-sync.sql
+
+# arriving on the other OS
+locadev db-import /path/to/Locadev/data/db-sync.sql
+```
+
+`db-export` dumps all user databases; `db-import` replaces the databases contained in the dump. System databases are never touched.
 
 ## Troubleshooting
 

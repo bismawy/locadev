@@ -27,6 +27,8 @@ if /i "%ACTION%"=="restart" goto do_restart
 if /i "%ACTION%"=="reload" goto do_reload
 if /i "%ACTION%"=="status" goto do_status
 if /i "%ACTION%"=="open" goto do_open
+if /i "%ACTION%"=="db-export" goto do_db_export
+if /i "%ACTION%"=="db-import" goto do_db_import
 if /i "%ACTION%"=="help" goto do_help
 if /i "%ACTION%"=="--help" goto do_help
 if /i "%ACTION%"=="-h" goto do_help
@@ -69,6 +71,64 @@ goto :eof
 start https://localhost
 goto :eof
 
+:do_db_export
+call :banner
+setlocal EnableDelayedExpansion
+set "DUMPFILE=%~2"
+if not defined DUMPFILE set "DUMPFILE=%LOCADEV_DIR%\data\db-sync.sql"
+netstat -an | findstr /R "127.0.0.1:3306[^0-9].*LISTENING" >nul 2>&1
+if errorlevel 1 (
+    echo %C_RED%[Locadev] MariaDB is not running. Run 'locadev start' first.%C_RESET%
+    endlocal
+    goto :eof
+)
+set "DBS="
+for /f "delims=" %%D in ('mariadb -h 127.0.0.1 -P 3306 -u root -N -B -e "SHOW DATABASES"') do (
+    if /i not "%%D"=="mysql" if /i not "%%D"=="performance_schema" if /i not "%%D"=="information_schema" if /i not "%%D"=="sys" set "DBS=!DBS! %%D"
+)
+if not defined DBS (
+    echo %C_YELLOW%[Locadev] No user databases to export.%C_RESET%
+    endlocal
+    goto :eof
+)
+if not exist "%LOCADEV_DIR%\data" mkdir "%LOCADEV_DIR%\data"
+echo %C_YELLOW%[Locadev] Exporting databases to !DUMPFILE! ...%C_RESET%
+mariadb-dump -h 127.0.0.1 -P 3306 -u root --add-drop-database --databases !DBS! > "!DUMPFILE!"
+if errorlevel 1 (
+    del /q "!DUMPFILE!" >nul 2>&1
+    echo %C_RED%[Locadev] Export failed.%C_RESET%
+) else (
+    echo %C_GREEN%[Locadev] Export complete: !DUMPFILE!%C_RESET%
+)
+endlocal
+goto :eof
+
+:do_db_import
+call :banner
+setlocal
+set "SQLFILE=%~2"
+if not defined SQLFILE set "SQLFILE=%LOCADEV_DIR%\data\db-sync.sql"
+netstat -an | findstr /R "127.0.0.1:3306[^0-9].*LISTENING" >nul 2>&1
+if errorlevel 1 (
+    echo %C_RED%[Locadev] MariaDB is not running. Run 'locadev start' first.%C_RESET%
+    endlocal
+    goto :eof
+)
+if not exist "%SQLFILE%" (
+    echo %C_RED%[Locadev] File not found: %SQLFILE%%C_RESET%
+    endlocal
+    goto :eof
+)
+echo %C_YELLOW%[Locadev] Importing %SQLFILE% (replaces the databases it contains) ...%C_RESET%
+mariadb -h 127.0.0.1 -P 3306 -u root < "%SQLFILE%"
+if errorlevel 1 (
+    echo %C_RED%[Locadev] Import failed.%C_RESET%
+) else (
+    echo %C_GREEN%[Locadev] Import complete.%C_RESET%
+)
+endlocal
+goto :eof
+
 :do_help
 call :banner
 echo Usage: locadev [command]
@@ -79,6 +139,8 @@ echo   stop        Stop all Locadev services
 echo   restart     Restart all Locadev services
 echo   reload      Hot reload Caddyfile without downtime
 echo   status      Show running status of services
+echo   db-export   Dump all user databases to a .sql file (default data\db-sync.sql)
+echo   db-import   Import a .sql dump, replacing the databases it contains
 echo   menu        Interactive control menu
 echo   open        Open dashboard in default web browser
 goto :eof
