@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 DIST="$ROOT/dist"
 BSDTAR="/c/Windows/System32/tar.exe"   # bsdtar: can write zip via extension
-[ -x "$BSDTAR" ] || BSDTAR=tar
+[ -x "$BSDTAR" ] || BSDTAR="$(command -v bsdtar || command -v tar)"
 
 mkdir -p "$DIST"
 rm -rf "$DIST"/locadev-*.zip "$DIST"/locadev-repo.*
