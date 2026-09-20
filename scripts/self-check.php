@@ -137,6 +137,30 @@ check('stop-tunnels.php runs cleanly when no tunnel is active', (function () use
     return $code === 0 && !str_contains(implode(' ', $out), 'Fatal error');
 })());
 
+echo "MariaDB data dir\n";
+// Only meaningful once a database exists: the check deletes the marker to exercise the adopt path.
+check('db-upgrade.php records the MariaDB version (and restores the marker)', (function () use ($root): bool {
+    $datadir = $root . '/data/mariadb';
+    if (!is_dir($datadir . '/mysql')) {
+        return true;
+    }
+    $marker = $datadir . '/.locadev-version';
+    $had = is_file($marker) ? (string) file_get_contents($marker) : null;
+    @unlink($marker);
+    $out = [];
+    $code = 1;
+    exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/scripts/db-upgrade.php') . ' 2>&1', $out, $code);
+    $text = implode(' ', $out);
+    $ok = $code === 0 && !str_contains($text, 'Fatal')
+        && preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/', trim((string) @file_get_contents($marker)));
+    if ($had === null) {
+        @unlink($marker);
+    } else {
+        file_put_contents($marker, $had);
+    }
+    return (bool) $ok;
+})());
+
 ob_end_flush();
 echo $fail === 0 ? "\nALL CHECKS PASSED\n" : "\n$fail CHECK(S) FAILED\n";
 exit($fail === 0 ? 0 : 1);

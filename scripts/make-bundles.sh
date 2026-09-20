@@ -34,27 +34,14 @@ echo "==> locadev-bin-win-x64.zip"
     .)
 
 # ===== 2. Thin repo bundle: scripts, dashboard, config, CLI (what installers download first) =====
-echo "==> locadev-repo.zip / locadev-repo.tar.gz"
-REPO_STAGE="$(mktemp -d)"
-mkdir -p "$REPO_STAGE/locadev-main"
-for item in .gitignore Caddyfile README.md install.ps1 install.sh \
-            config dashboard scripts start.bat stop.bat start.sh stop.sh; do
-    [ -e "$ROOT/$item" ] && cp -r "$ROOT/$item" "$REPO_STAGE/locadev-main/"
-done
-# bin/: only the two small CLI scripts - binaries ship in locadev-bin-win-x64.zip
-mkdir -p "$REPO_STAGE/locadev-main/bin"
-cp "$ROOT/bin/locadev" "$ROOT/bin/locadev.cmd" "$REPO_STAGE/locadev-main/bin/"
-rm -f  "$REPO_STAGE/locadev-main/config/sites.json"
-# User data must never ship: a leftover demo*.caddy makes fresh installs show phantom
-# sites pointing at directories that do not exist (sites.json is gone, so the loader
-# falls back to globbing config/sites/*.caddy).
-rm -f  "$REPO_STAGE/locadev-main/config/sites/"*.caddy
-mkdir -p "$REPO_STAGE/locadev-main/sites" "$REPO_STAGE/locadev-main/config/sites"
-touch "$REPO_STAGE/locadev-main/sites/.gitkeep"
-
-(cd "$REPO_STAGE" && "$BSDTAR" -a -cf "$DIST/locadev-repo.zip" locadev-main \
-    && tar -czf "$DIST/locadev-repo.tar.gz" locadev-main)
-rm -rf "$REPO_STAGE"
+# Built from a commit, never from the working tree: git emits tracked files only, so user data
+# (config/sites.json, config/sites/*.caddy, data/, sites/) can never ship. The old cp + hand
+# written rm list DID leak those into the v1.0.0/v1.1.0 bundles. Pass a ref to rebuild an old
+# release: scripts/make-bundles.sh v1.1.0
+REF="${1:-HEAD}"
+echo "==> locadev-repo.zip / locadev-repo.tar.gz (from $REF)"
+git -C "$ROOT" archive --format=zip --prefix=locadev-main/ "$REF" > "$DIST/locadev-repo.zip"
+git -C "$ROOT" archive --format=tgz --prefix=locadev-main/ "$REF" > "$DIST/locadev-repo.tar.gz"
 
 echo ""
 ls -lh "$DIST"

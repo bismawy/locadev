@@ -17,6 +17,13 @@ set "C_YELLOW=%ESC%[33m"
 set "PHPRC=%LOCADEV_DIR%\bin"
 set "PATH=%LOCADEV_DIR%\bin;%LOCADEV_DIR%\bin\mariadb\bin;%PATH%"
 
+rem Windows bundles MariaDB inside bin\, so its version only moves when Locadev does. Setting
+rem LOCADEV_MARIADB_BIN points the server at your own build instead (newer release, another
+rem install); data\mariadb is upgraded for it on the next start by scripts\db-upgrade.php.
+set "MARIADB_SERVER=%LOCADEV_DIR%\bin\mariadb\bin\mariadbd.exe"
+if defined LOCADEV_MARIADB_BIN if exist "%LOCADEV_MARIADB_BIN%" set "MARIADB_SERVER=%LOCADEV_MARIADB_BIN%"
+for %%i in ("%MARIADB_SERVER%") do set "MARIADB_IMAGE=%%~nxi"
+
 set "ACTION=%~1"
 if "%ACTION%"=="" set "ACTION=start"
 
@@ -291,14 +298,14 @@ taskkill /F /IM frankenphp.exe >nul 2>&1
 rem port 3306 closes before InnoDB finishes flushing - wait for the PROCESS, not the port
 set STOP_TRIES=0
 :wait_db_down
-tasklist /FI "IMAGENAME eq mariadbd.exe" | findstr /I mariadbd >nul 2>&1
+tasklist /FI "IMAGENAME eq %MARIADB_IMAGE%" | findstr /I "%MARIADB_IMAGE%" >nul 2>&1
 if errorlevel 1 goto db_killed
 set /a STOP_TRIES+=1
 if %STOP_TRIES% GTR 10 goto db_killed
 ping -n 2 127.0.0.1 >nul 2>&1
 goto wait_db_down
 :db_killed
-taskkill /F /IM mariadbd.exe >nul 2>&1
+taskkill /F /IM "%MARIADB_IMAGE%" >nul 2>&1
 goto :eof
 
 :web_up
@@ -310,11 +317,12 @@ netstat -an | findstr /R "127.0.0.1:3306[^0-9].*LISTENING" >nul 2>&1
 if not errorlevel 1 goto :eof
 call :ensure_db_files
 echo %C_YELLOW%[Locadev] Starting MariaDB...%C_RESET%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%LOCADEV_DIR%\bin\mariadb\bin\mariadbd.exe' -ArgumentList '--defaults-file=\"\"%LOCADEV_DIR%\data\mariadb\my.ini\"\"' -WindowStyle Hidden"
+if defined LOCADEV_MARIADB_BIN if exist "%LOCADEV_MARIADB_BIN%" echo %C_YELLOW%[Locadev] MariaDB override: %LOCADEV_MARIADB_BIN%%C_RESET%
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%MARIADB_SERVER%' -ArgumentList '--defaults-file=\"\"%LOCADEV_DIR%\data\mariadb\my.ini\"\"' -WindowStyle Hidden"
 set DB_TRIES=0
 :wait_db
 netstat -an | findstr /R "127.0.0.1:3306[^0-9].*LISTENING" >nul 2>&1
-if not errorlevel 1 goto :eof
+if not errorlevel 1 goto db_up
 set /a DB_TRIES+=1
 if %DB_TRIES% GTR 30 (
     echo %C_RED%[Locadev] ERROR: MariaDB did not start within 30 seconds. Check data\mariadb\*.err%C_RESET%
@@ -322,6 +330,10 @@ if %DB_TRIES% GTR 30 (
 )
 ping -n 2 127.0.0.1 >nul 2>&1
 goto wait_db
+:db_up
+rem scripts\db-upgrade.php upgrades data\mariadb after a MariaDB change - see that file.
+"%LOCADEV_DIR%\bin\php.exe" "%LOCADEV_DIR%\scripts\db-upgrade.php"
+goto :eof
 
 :start_web
 call :web_up

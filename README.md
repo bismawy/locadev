@@ -139,6 +139,7 @@ Locadev/
 ├── dashboard/             # the PHP web dashboard (https://localhost)
 ├── data/
 │   ├── mariadb/           # database storage (auto-initialized on first run)
+│   │   └── .locadev-version   # MariaDB version this data was last upgraded for
 │   ├── cms/               # CMS .zip archives (versioned)
 │   ├── composer/          # composer.phar + Composer package cache
 │   ├── tunnels.json       # sites currently published online
@@ -168,6 +169,28 @@ default_bind 127.0.0.1 ::1     # Caddy, admin API, and MariaDB: loopback only
 | Windows x64 | bundled `bin/frankenphp.exe` | bundled `bin/mariadb/` |
 | Linux x86_64 / aarch64 | official static build (installer) | system `mariadbd` |
 | macOS (arm64 / Intel) | official static build (installer) | Homebrew MariaDB |
+
+</details>
+
+<details>
+<summary><b>Runtime versions (and swapping MariaDB)</b></summary>
+
+Windows ships PHP, FrankenPHP and MariaDB inside `bin/`, so those versions only move when you install a new Locadev release. On Linux and macOS MariaDB comes from your package manager, so it follows your OS updates.
+
+To run your **own** MariaDB instead of the bundled one (a newer release, or a second install), point the server at it:
+
+```bash
+LOCADEV_MARIADB_BIN=/opt/mariadb/bin/mariadbd locadev start     # bash
+```
+
+```bat
+set LOCADEV_MARIADB_BIN=C:\mariadb\bin\mariadbd.exe
+locadev start
+```
+
+Locadev keeps using its own `data/mariadb` and config either way. When the MariaDB binary changes - bundled update or override - `locadev start` notices and runs `mariadb-upgrade` once, so an older data directory is repaired instead of left serving errors. The version it last upgraded for is written to `data/mariadb/.locadev-version`; delete that file to force a re-check. If the upgrade fails, the start prints the command to run by hand and your data is untouched.
+
+Current versions are on the dashboard (System Info panel and the PHP Runtime card).
 
 </details>
 
@@ -313,19 +336,39 @@ LOCADEV_HOME=/srv/locadev LOCADEV_GH=you/locadev \
 
 </details>
 
+<details>
+<summary>MariaDB refuses to start after a Locadev update (or a MariaDB swap)</summary>
+
+MariaDB will not serve a data directory written by an older major version until its system tables are upgraded. `locadev start` normally does that for you and reports it:
+
+```text
+[Locadev] MariaDB 10.11.6 -> 11.4.5, upgrading the database...
+[Locadev] Database upgraded to 11.4.5.
+```
+
+If it reports a failure instead, nothing was modified: run the command it prints, then start again.
+
+```bash
+mariadb-upgrade -h 127.0.0.1 -P 3306 -u root
+```
+
+Only `data/mariadb/.locadev-version` is updated once the upgrade succeeds, so a failed upgrade simply retries on the next start.
+
+</details>
+
 ## License
 
 Distributed under the **MIT** license.
 
 ## Developer
 
-Self-check for the paths that fail silently (JSON mode, CMS zip cache, CSRF fence):
+Self-check for the paths that fail silently (JSON mode, CMS zip cache, CSRF fence, tunnel state, MariaDB version marker):
 
 ```bash
 bin/php.exe scripts/self-check.php                 # Windows (bundled PHP)
 bin/frankenphp php-cli scripts/self-check.php      # Linux / macOS
 ```
 
-Release assets are built with `scripts/make-bundles.sh`; upload `dist/*` to a GitHub release.
+Release assets are built with `scripts/make-bundles.sh`; upload `dist/*` to a GitHub release. The repo bundle is produced by `git archive`, so only committed files can ship and user data (`config/sites.json`, `config/sites/*.caddy`, `data/`) can never leak into a release; pass a tag to rebuild an older release (`scripts/make-bundles.sh v1.1.0`).
 
 Developed and maintained by [Bisma](https://github.com/bismawy).

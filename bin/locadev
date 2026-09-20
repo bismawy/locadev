@@ -19,6 +19,19 @@ MARIADB_CLI="$LOCADEV_DIR/bin/mariadb/bin/mariadb.exe"
 MARIADB_DUMP="$LOCADEV_DIR/bin/mariadb/bin/mariadb-dump.exe"
 [ -f "$MARIADB_DUMP" ] || MARIADB_DUMP="$(command -v mariadb-dump || command -v mysqldump)"
 
+# Windows bundles MariaDB inside bin/, so its version only moves when Locadev does. Setting
+# LOCADEV_MARIADB_BIN points the server at your own build instead (newer release, another
+# install); data/mariadb is upgraded for it on the next start by scripts/db-upgrade.php.
+IS_WIN=0
+case "$OS" in MINGW*|MSYS*|CYGWIN*) IS_WIN=1 ;; esac
+MARIADB_SERVER=""
+if [ "$IS_WIN" = 1 ]; then
+    MARIADB_SERVER="$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe"
+    [ -f "$MARIADB_SERVER" ] || MARIADB_SERVER=""
+    [ -n "$LOCADEV_MARIADB_BIN" ] && [ -f "$LOCADEV_MARIADB_BIN" ] && MARIADB_SERVER="$LOCADEV_MARIADB_BIN"
+fi
+MARIADB_IMAGE="$(basename "${MARIADB_SERVER:-mariadbd.exe}")"
+
 # ANSI Colors (only status/action tokens; the rest stays default)
 C_RESET=$'\e[0m'
 C_GREEN=$'\e[32m'
@@ -177,7 +190,7 @@ stop_cmds() {
         t=$((t + 1)); [ "$t" -ge 6 ] && break
         sleep 1
     done
-    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
+    if [ "$IS_WIN" = 1 ]; then
         taskkill //F //IM frankenphp.exe >/dev/null 2>&1
     else
         pkill -f frankenphp 2>/dev/null
@@ -185,12 +198,12 @@ stop_cmds() {
     "$MARIADB_ADMIN" -h 127.0.0.1 -P 3306 -u root shutdown >/dev/null 2>&1
     # port 3306 closes before InnoDB finishes flushing - wait for the PROCESS, not the port
     t=0
-    while tasklist //FI "IMAGENAME eq mariadbd.exe" 2>/dev/null | grep -q mariadbd; do
+    while tasklist //FI "IMAGENAME eq $MARIADB_IMAGE" 2>/dev/null | grep -qi "${MARIADB_IMAGE%.exe}"; do
         t=$((t + 1)); [ "$t" -ge 11 ] && break
         sleep 1
     done
-    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
-        taskkill //F //IM mariadbd.exe >/dev/null 2>&1
+    if [ "$IS_WIN" = 1 ]; then
+        taskkill //F //IM "$MARIADB_IMAGE" >/dev/null 2>&1
     else
         pkill -f mariadbd 2>/dev/null
         pkill -f mysqld 2>/dev/null
@@ -253,14 +266,26 @@ ensure_php_ini() {
     sed -i.bak "s|^extension_dir = .*|$want|" "$ini" && rm -f "$ini.bak"
 }
 
+db_check() {
+    # scripts/db-upgrade.php upgrades data/mariadb after a MariaDB change - see that file.
+    if [ -f "$LOCADEV_DIR/bin/php.exe" ]; then
+        PHPRC="$LOCADEV_DIR/bin" "$LOCADEV_DIR/bin/php.exe" "$LOCADEV_DIR/scripts/db-upgrade.php"
+    elif [ -x "$LOCADEV_DIR/bin/frankenphp" ]; then
+        "$LOCADEV_DIR/bin/frankenphp" php-cli "$LOCADEV_DIR/scripts/db-upgrade.php"
+    fi
+}
+
 start_db() {
     port_open 3306 && return 0
-    [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ] && ensure_db_files
+    [ -n "$MARIADB_SERVER" ] && ensure_db_files
     echo "${C_YELLOW}[Locadev] Starting MariaDB...${C_RESET}"
-    if [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadbd.exe" ]; then
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$LOCADEV_DIR\\bin\\mariadb\\bin\\mariadbd.exe' -ArgumentList '--defaults-file=\"\"$LOCADEV_DIR\\data\\mariadb\\my.ini\"\"' -WindowStyle Hidden" 2>/dev/null
-    elif command -v mariadbd >/dev/null 2>&1 || command -v mysqld >/dev/null 2>&1; then
-        DB_BIN="$(command -v mariadbd 2>/dev/null || command -v mysqld)"
+    if [ -n "$LOCADEV_MARIADB_BIN" ] && [ -f "$LOCADEV_MARIADB_BIN" ]; then
+        echo "${C_YELLOW}[Locadev] MariaDB override: $LOCADEV_MARIADB_BIN${C_RESET}"
+    fi
+    if [ -n "$MARIADB_SERVER" ]; then
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$MARIADB_SERVER' -ArgumentList '--defaults-file=\"\"$LOCADEV_DIR\\data\\mariadb\\my.ini\"\"' -WindowStyle Hidden" 2>/dev/null
+    elif [ -n "${LOCADEV_MARIADB_BIN:-$(command -v mariadbd 2>/dev/null || command -v mysqld)}" ]; then
+        DB_BIN="${LOCADEV_MARIADB_BIN:-$(command -v mariadbd 2>/dev/null || command -v mysqld)}"
         ensure_mariadb_data
         # ponytail: socket in /tmp - NTFS/FAT mounts (dual-boot drives) can't host unix sockets
         "$DB_BIN" --defaults-file="$LOCADEV_DIR/config/my.cnf" \
@@ -281,6 +306,7 @@ start_db() {
         return 1
     fi
     if wait_port 3306 30; then
+        db_check
         return 0
     else
         echo "${C_RED}[Locadev] ERROR: MariaDB did not start within 30s. Check data/mariadb/*.err${C_RESET}"
