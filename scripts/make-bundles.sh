@@ -40,8 +40,12 @@ echo "==> locadev-bin-win-x64.zip"
 # release: scripts/make-bundles.sh v1.1.0
 REF="${1:-HEAD}"
 echo "==> locadev-repo.zip / locadev-repo.tar.gz (from $REF)"
-git -C "$ROOT" archive --format=zip --prefix=locadev-main/ "$REF" > "$DIST/locadev-repo.zip"
-git -C "$ROOT" archive --format=tgz --prefix=locadev-main/ "$REF" > "$DIST/locadev-repo.tar.gz"
+# --worktree-attributes so the LF/CRLF rules in .gitattributes also apply when rebuilding an
+# older tag that predates that file; autocrlf off so the maintainer's git config cannot
+# rewrite every line ending in the bundle.
+ARCHIVE=(git -C "$ROOT" -c core.autocrlf=false archive --worktree-attributes --prefix=locadev-main/ "$REF")
+"${ARCHIVE[@]}" --format=zip > "$DIST/locadev-repo.zip"
+"${ARCHIVE[@]}" --format=tgz > "$DIST/locadev-repo.tar.gz"
 
 echo ""
 ls -lh "$DIST"

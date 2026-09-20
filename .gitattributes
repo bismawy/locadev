@@ -1,0 +1,7 @@
+# git archive follows core.autocrlf, which turned EVERY file into CRLF in a bundle built on
+# Windows - a CRLF shell script dies on Linux/macOS ("$'\r': command not found"). Pin the
+# ending each platform actually needs so a bundle is byte-identical whoever builds it.
+*.sh        text eol=lf
+bin/locadev text eol=lf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
