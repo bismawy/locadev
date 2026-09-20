@@ -163,6 +163,13 @@ summary() {
 }
 
 stop_cmds() {
+    # cloudflared does NOT die when frankenphp stops, so kill the tunnels first: otherwise
+    # their public URLs are left hanging (502) and still look active in the dashboard.
+    if [ -f "$LOCADEV_DIR/bin/php.exe" ]; then
+        PHPRC="$LOCADEV_DIR/bin" "$LOCADEV_DIR/bin/php.exe" "$LOCADEV_DIR/scripts/stop-tunnels.php" >/dev/null 2>&1
+    elif [ -x "$LOCADEV_DIR/bin/frankenphp" ]; then
+        "$LOCADEV_DIR/bin/frankenphp" php-cli "$LOCADEV_DIR/scripts/stop-tunnels.php" >/dev/null 2>&1
+    fi
     curl -s -X POST http://127.0.0.1:2019/stop >/dev/null 2>&1
     # wait for graceful shutdown (process gone), force-kill is only a fallback
     local t=0
@@ -230,11 +237,20 @@ port=3306
 default-character-set=utf8mb4
 INI
     fi
-    if [ ! -d "$LOCADEV_DIR/data/mariadb/mysql" ] && [ -f "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" ]; then
-        echo "${C_YELLOW}[Locadev] Initializing MariaDB data directory (first run)...${C_RESET}"
-        "$LOCADEV_DIR/bin/mariadb/bin/mariadb-install-db.exe" \
-            --datadir="$LOCADEV_DIR/data/mariadb" >/dev/null 2>&1
-    fi
+}
+
+ensure_php_ini() {
+    # The bundled php.ini points extension_dir at another install (the shipped path, or a
+    # Windows path on a shared dual-boot drive). Repoint it only when that path is gone,
+    # so a working custom ini is never clobbered - and only when we have an ext/ to use.
+    local ini="$LOCADEV_DIR/bin/php.ini" ext="$LOCADEV_DIR/bin/ext" cur want
+    [ -f "$ini" ] && [ -d "$ext" ] || return 0
+    cur=$(sed -n 's/^extension_dir[[:space:]]*=[[:space:]]*"\?\([^"]*\)"\?[[:space:]]*$/\1/p' "$ini" | head -n1)
+    [ -n "$cur" ] && [ -d "$cur" ] && return 0
+    want="extension_dir = \"$ext\""
+    grep -qxF "$want" "$ini" && return 0
+    echo "${C_YELLOW}[Locadev] Pointing php.ini extension_dir at this install...${C_RESET}"
+    sed -i.bak "s|^extension_dir = .*|$want|" "$ini" && rm -f "$ini.bak"
 }
 
 start_db() {
@@ -274,6 +290,7 @@ start_db() {
 
 start_web() {
     { port_open 8080 || port_open 443; } && return 0
+    ensure_php_ini
     echo "${C_YELLOW}[Locadev] Starting FrankenPHP...${C_RESET}"
     if [ -f "$LOCADEV_DIR/bin/frankenphp.exe" ]; then
         powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "\$env:PHPRC='$LOCADEV_DIR\\bin'; Start-Process -FilePath '$LOCADEV_DIR\\bin\\frankenphp.exe' -ArgumentList 'run --config Caddyfile' -WorkingDirectory '$LOCADEV_DIR' -WindowStyle Hidden" 2>/dev/null

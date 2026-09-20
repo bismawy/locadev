@@ -8,11 +8,22 @@ echo "==================================================="
 echo "  Locadev - Local Development Environment"
 echo "==================================================="
 echo "  Dashboard URL    : https://localhost"
-echo "  ClassicPress URL : https://classtive.localhost"
+echo "  Website URLs     : https://<site-name>.localhost"
 echo "  MariaDB Host     : 127.0.0.1:3306 (User: root)"
 echo "  Press Ctrl+C to stop the server."
 echo "==================================================="
-echo ""
+echo
+
+# bin/php.ini may point extension_dir at another install (the shipped path, or a Windows
+# path on a shared dual-boot drive). Repoint it only when that path is gone.
+PHP_INI="$PWD/bin/php.ini"
+if [ -f "$PHP_INI" ] && [ -d "$PWD/bin/ext" ]; then
+    CUR_EXT=$(sed -n 's/^extension_dir[[:space:]]*=[[:space:]]*"\?\([^"]*\)"\?[[:space:]]*$/\1/p' "$PHP_INI" | head -n1)
+    if [ -n "$CUR_EXT" ] && [ ! -d "$CUR_EXT" ]; then
+        sed -i.bak "s|^extension_dir = .*|extension_dir = \"$PWD/bin/ext\"|" "$PHP_INI" && rm -f "$PHP_INI.bak"
+        echo "[Locadev] Repointed php.ini extension_dir at $PWD/bin/ext"
+    fi
+fi
 
 # Start MariaDB if not already running on port 3306
 if ! nc -z 127.0.0.1 3306 2>/dev/null && ! lsof -nP -iTCP:3306 -sTCP:LISTEN >/dev/null 2>&1 && ! ss -tlpn 2>/dev/null | grep -q ":3306 "; then

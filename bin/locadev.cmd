@@ -240,6 +240,16 @@ if "%DB_FRESH%"=="1" (
 )
 goto :eof
 
+:ensure_php_ini
+rem The bundled php.ini points extension_dir at another install. Repoint it at THIS one,
+rem but only when that configured path is gone (never clobber a working custom ini).
+set "PHP_INI=%LOCADEV_DIR%\bin\php.ini"
+if not exist "%PHP_INI%" goto :eof
+if not exist "%LOCADEV_DIR%\bin\ext" goto :eof
+set "LOCADEV_DIR_FWD=%LOCADEV_DIR:\=/%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$q=[char]34; $p='%PHP_INI%'; $d='%LOCADEV_DIR_FWD%/bin/ext'; if (-not (Test-Path $d)) { exit }; $t=[IO.File]::ReadAllText($p); $m=[regex]::Match($t, '(?m)^extension_dir\s*=\s*' + $q + '?([^' + $q + '\r\n]*)'); if ($m.Success -and -not (Test-Path $m.Groups[1].Value)) { [IO.File]::WriteAllText($p, ($t -replace '(?m)^extension_dir = .*', ('extension_dir = ' + $q + $d + $q))) }" >nul 2>&1
+goto :eof
+
 :banner
 echo ===================================================
 echo   Locadev - Just runs. Natively.
@@ -263,6 +273,8 @@ echo ===================================================
 goto :eof
 
 :stop_cmds
+rem cloudflared does NOT die when frankenphp stops, so kill the tunnels first
+if exist "%LOCADEV_DIR%\scripts\stop-tunnels.php" "%LOCADEV_DIR%\bin\php.exe" "%LOCADEV_DIR%\scripts\stop-tunnels.php" >nul 2>&1
 curl -s -X POST http://127.0.0.1:2019/stop >nul 2>&1
 rem wait for graceful shutdown (process gone), force-kill is only a fallback
 set STOP_TRIES=0
@@ -314,6 +326,7 @@ goto wait_db
 :start_web
 call :web_up
 if not errorlevel 1 goto :eof
+call :ensure_php_ini
 echo %C_YELLOW%[Locadev] Starting FrankenPHP...%C_RESET%
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:PHPRC='%LOCADEV_DIR%\bin'; Start-Process -FilePath '%LOCADEV_DIR%\bin\frankenphp.exe' -ArgumentList 'run --config Caddyfile' -WorkingDirectory '%LOCADEV_DIR%' -WindowStyle Hidden"
 set WEB_TRIES=0

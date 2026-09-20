@@ -8,7 +8,10 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.0.0');
+define('LOCODEV_VERSION', '1.2.0');
+
+/** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
+const SYSTEM_DBS = ['information_schema', 'mysql', 'performance_schema', 'sys'];
 
 $baseDir = dirname(__DIR__);
 $configDir = $baseDir . DIRECTORY_SEPARATOR . 'config';
@@ -98,50 +101,67 @@ function delete_directory_recursive($dir) {
 // HTTPS from the official source). No intermediate data/templates/ copy: it froze
 // the first-downloaded version forever and was a silent tampering surface.
 function deploy_cms_template($preset, $absRoot, $cmsDir) {
+    if (!class_exists('ZipArchive')) {
+        return false; // zip extension toggled off: fail soft instead of a fatal
+    }
+
+    $readable = function (string $f): bool {
+        $z = @new ZipArchive();
+        if ($z->open($f) !== true) {
+            return false;
+        }
+        $z->close();
+        return true;
+    };
+
     // Cache is versioned (classicpress-2.7.2.zip); new upstream release = new filename,
-    // so the next site creation automatically picks up the latest version.
+    // so the next site creation automatically picks up the latest version. Sorted
+    // naturally (2.10 > 2.9) and validated: an interrupted download leaves a 0-byte
+    // file that used to be trusted forever and made every later deploy fail silently.
+    $prefix = $preset === 'classicpress' ? 'classicpress' : 'wordpress';
+    $cached = glob($cmsDir . DIRECTORY_SEPARATOR . $prefix . '-*.zip') ?: [];
+    usort($cached, fn(string $a, string $b): int => -strnatcasecmp($a, $b));
+
     $zipFile = null;
-    if ($preset === 'classicpress') {
-        foreach (glob($cmsDir . DIRECTORY_SEPARATOR . 'classicpress-*.zip') ?: [] as $f) {
-            $zipFile = $f;
-            break; // ponytail: keeps the newest version already in cache; delete the zip to force upgrade
-        }
-        if (!$zipFile) {
-            $tag = latest_classicpress_tag();
-            if ($tag) {
-                $zipFile = $cmsDir . DIRECTORY_SEPARATOR . "classicpress-{$tag}.zip";
-                @file_put_contents($zipFile, fopen("https://codeload.github.com/ClassicPress/ClassicPress-release/zip/refs/tags/{$tag}", 'r'));
-            }
-        }
-    } else {
-        foreach (glob($cmsDir . DIRECTORY_SEPARATOR . 'wordpress-*.zip') ?: [] as $f) {
-            $zipFile = $f;
+    foreach ($cached as $candidate) {
+        if ($readable($candidate)) {
+            $zipFile = $candidate;
             break;
         }
-        if (!$zipFile) {
+        @unlink($candidate);
+    }
+
+    if (!$zipFile) {
+        if ($preset === 'classicpress') {
+            $tag = latest_classicpress_tag();
+            $zipFile = $cmsDir . DIRECTORY_SEPARATOR . "classicpress-{$tag}.zip";
+            @file_put_contents($zipFile, fopen("https://codeload.github.com/ClassicPress/ClassicPress-release/zip/refs/tags/{$tag}", 'r'));
+        } else {
             // wordpress.org/latest.zip is always current: download it once, read the
             // version inside, and store it under a versioned name so future releases
             // trigger a fresh download instead of reusing a stale cache forever.
             $tmp = $cmsDir . DIRECTORY_SEPARATOR . 'wp-download-' . bin2hex(random_bytes(4)) . '.zip';
             @file_put_contents($tmp, fopen('https://wordpress.org/latest.zip', 'r'));
+            if (!$readable($tmp)) {
+                @unlink($tmp);
+                return false;
+            }
             $version = null;
-            $z = @new ZipArchive();
-            if (file_exists($tmp) && $z->open($tmp) === true) {
+            $z = new ZipArchive();
+            if ($z->open($tmp) === true) {
                 $vp = (string) $z->getFromName('wordpress/wp-includes/version.php');
                 if (preg_match('/\$wp_version\s*=\s*\'([^\']+)\'/', $vp, $m)) {
                     $version = $m[1];
                 }
                 $z->close();
             }
-            if (!file_exists($tmp)) {
-                return false;
-            }
             $zipFile = $cmsDir . DIRECTORY_SEPARATOR . 'wordpress-' . ($version ?: 'latest') . '.zip';
             @rename($tmp, $zipFile);
         }
-    }
-    if (!$zipFile || !file_exists($zipFile)) {
-        return false;
+        if (!$readable($zipFile)) {
+            @unlink($zipFile); // never leave a truncated download behind as "cache"
+            return false;
+        }
     }
 
     $zip = new ZipArchive();
@@ -235,9 +255,10 @@ function generate_wp_config_file($destDir, $dbName, $dbUser = 'root', $dbPass = 
 
 function deploy_laravel_project($absRoot, $composerDir, $dbName, $appUrl = '') {
     global $baseDir;
+    $artisan = $absRoot . DIRECTORY_SEPARATOR . 'artisan';
 
     // Idempotent: never re-run create-project over an existing Laravel app
-    if (file_exists($absRoot . DIRECTORY_SEPARATOR . 'artisan')) {
+    if (file_exists($artisan)) {
         return ['success' => true];
     }
 
@@ -273,7 +294,7 @@ function deploy_laravel_project($absRoot, $composerDir, $dbName, $appUrl = '') {
         . ' create-project laravel/laravel ' . escapeshellarg($absRoot)
         . ' --no-interaction --prefer-dist --no-progress 2>&1';
     exec($cmd, $out, $code);
-    if ($code !== 0 || !file_exists($absRoot . DIRECTORY_SEPARATOR . 'artisan')) {
+    if ($code !== 0 || !file_exists($artisan)) {
         return ['success' => false, 'error' => "composer create-project failed:\n" . implode("\n", array_slice($out, -6))];
     }
 
@@ -365,15 +386,9 @@ function save_sites_json($sitesJson, $sites) {
 }
 
 function generate_caddy_block($site) {
-    $domains = array_filter(array_map('trim', explode(',', $site['domain'])));
-    $domainList = [];
-    foreach ($domains as $d) {
-        $domainList[] = $d;
-    }
-    $domainStr = implode(', ', $domainList);
-    $root = rtrim($site['root'], '/\\');
-    // Normalize path for Caddyfile
-    $root = str_replace('\\', '/', $root);
+    $domainStr = implode(', ', array_filter(array_map('trim', explode(',', $site['domain']))));
+    // Normalize path for the Caddyfile
+    $root = str_replace('\\', '/', rtrim($site['root'], '/\\'));
     // Laravel serves from the public/ subdirectory
     if (($site['preset'] ?? '') === 'laravel') {
         $root .= '/public';
@@ -392,23 +407,254 @@ function generate_caddy_block($site) {
     return $content;
 }
 
-function reload_caddy($caddyfile) {
+/** Path of the FrankenPHP binary for this platform. */
+function frankenphp_bin() {
     global $baseDir;
-    $bin = PHP_OS_FAMILY === 'Windows' 
-        ? $baseDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'frankenphp.exe'
-        : $baseDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'frankenphp';
-    
-    if (file_exists($bin)) {
-        if (PHP_OS_FAMILY === 'Windows') {
-            $cmd = 'start /B "" ' . escapeshellarg($bin) . ' reload --config ' . escapeshellarg($caddyfile);
-            pclose(popen($cmd, 'r'));
-        } else {
-            $cmd = escapeshellarg($bin) . ' reload --config ' . escapeshellarg($caddyfile) . ' > /dev/null 2>&1 &';
-            exec($cmd);
-        }
+    return $baseDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'frankenphp'
+        . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
+}
+
+/* ================= Cloudflare Quick Tunnel (trycloudflare.com) ================= */
+/** Satu situs = satu cloudflared; state runtime ada di data/tunnels.json (gitignored). */
+
+function cloudflared_bin() {
+    global $baseDir;
+    return $baseDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'cloudflared'
+        . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
+}
+
+function tunnels_state_file() {
+    global $baseDir;
+    return $baseDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'tunnels.json';
+}
+
+/** @return array<string, array{pid:int,url:string,host:string,started:int}> */
+function read_tunnels(): array {
+    $data = json_decode((string) @file_get_contents(tunnels_state_file()), true);
+    return is_array($data) ? $data : [];
+}
+
+function write_tunnels(array $tunnels): void {
+    @file_put_contents(tunnels_state_file(), json_encode($tunnels, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+}
+
+/** Nama aset rilis cloudflared untuk OS/arsitektur ini (null = tidak didukung). */
+function cloudflared_asset(): ?string {
+    $os = ['Windows' => 'windows', 'Linux' => 'linux', 'Darwin' => 'darwin'][PHP_OS_FAMILY] ?? null;
+    if ($os === null) {
+        return null;
+    }
+    $machine = strtolower((string) php_uname('m'));
+    $arch = (str_contains($machine, 'arm64') || str_contains($machine, 'aarch64')) ? 'arm64' : 'amd64';
+    $suffix = $os === 'windows' ? '.exe' : ($os === 'darwin' ? '.tgz' : '');
+    return 'cloudflared-' . $os . '-' . $arch . $suffix;
+}
+
+/** Unduh cloudflared sekali saja (~50 MB) dari GitHub releases. */
+function ensure_cloudflared(): array {
+    $bin = cloudflared_bin();
+    if (is_file($bin) && filesize($bin) > 1000) {
         return ['success' => true];
     }
-    return ['success' => false, 'error' => 'frankenphp binary not found'];
+
+    $asset = cloudflared_asset();
+    if ($asset === null) {
+        return ['success' => false, 'error' => 'Platform not supported for the automatic cloudflared download'];
+    }
+
+    if (!ini_get('allow_url_fopen')) {
+        return ['success' => false, 'error' => 'allow_url_fopen is disabled — cannot download cloudflared'];
+    }
+
+    // Stream HTTP (bukan curl): build PHP di Windows tidak punya CA bundle untuk curl,
+    // sedangkan stream HTTPS diverifikasi normal — sama seperti unduhan CMS di atas.
+    $url = 'https://github.com/cloudflare/cloudflared/releases/latest/download/' . $asset;
+    $tmp = $bin . '.part';
+    @mkdir(dirname($bin), 0777, true);
+    set_time_limit(0); // unduhan melebihi max_execution_time (30 dtk)
+    $ctx = stream_context_create(['http' => ['timeout' => 900, 'user_agent' => 'locadev']]);
+    $ok = @copy($url, $tmp, $ctx);
+    if (!$ok || filesize($tmp) < 1000000) { // <1 MB = hampiran halaman error, bukan biner
+        @unlink($tmp);
+        return ['success' => false, 'error' => 'Download failed (no network, or the GitHub release is unreachable)'];
+    }
+
+    if (PHP_OS_FAMILY === 'Darwin') { // rilis macOS berbentuk .tgz
+        $out = [];
+        $code = 0;
+        exec('tar -xzf ' . escapeshellarg($tmp) . ' -C ' . escapeshellarg(dirname($bin)) . ' 2>&1', $out, $code);
+        @unlink($tmp);
+        if ($code !== 0 || !is_file($bin)) {
+            return ['success' => false, 'error' => 'Cannot extract ' . $asset];
+        }
+    } else {
+        @rename($tmp, $bin);
+    }
+    @chmod($bin, 0755);
+    return ['success' => true];
+}
+
+/** URL publik yang dicetak cloudflared di log-nya. */
+function tunnel_url_from_log(string $log): ?string {
+    return preg_match('~https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com~i', $log, $m) ? $m[0] : null;
+}
+
+/** Kill pid — hanya bila prosesnya benar-benar cloudflared (pid bisa didaur ulang). */
+function stop_tunnel_pid(int $pid): void {
+    if ($pid <= 0) {
+        return;
+    }
+    if (PHP_OS_FAMILY === 'Windows') {
+        $out = [];
+        exec('tasklist /FI "PID eq ' . $pid . '" /FO CSV /NH 2>&1', $out);
+        if (!str_contains(strtolower(implode(' ', $out)), 'cloudflared')) {
+            return;
+        }
+        exec('taskkill /F /PID ' . $pid . ' 2>&1');
+        return;
+    }
+    $out = [];
+    exec('ps -p ' . $pid . ' -o args= 2>/dev/null', $out); // ada di Linux & macOS
+    if (!str_contains(strtolower(implode(' ', $out)), 'cloudflared')) {
+        return;
+    }
+    exec('kill ' . $pid . ' 2>&1');
+}
+
+function stop_site_tunnel(string $id): void {
+    $tunnels = read_tunnels();
+    if (!isset($tunnels[$id])) {
+        return;
+    }
+    stop_tunnel_pid((int) ($tunnels[$id]['pid'] ?? 0));
+    unset($tunnels[$id]);
+    write_tunnels($tunnels);
+}
+
+/** Jalankan cloudflared untuk satu situs; mengembalikan URL publiknya. */
+/**
+ * WordPress/ClassicPress menyimpan URL absolut (https://<nama>.localhost) di database, sehingga
+ * pengunjung dari luar (mis. ponsel) gagal memuat CSS/aset miliknya. mu-plugin ini mengganti host
+ * HANYA ketika permintaan datang lewat domain Quick Tunnel; akses lokal tidak berubah.
+ */
+function ensure_tunnel_url_plugin(array $site): void {
+    $root = rtrim(str_replace('\\', '/', (string) ($site['root'] ?? '')), '/');
+    $content = $root . '/wp-content';
+    if ($root === '' || !is_dir($content)) {
+        return; // bukan situs WordPress/ClassicPress
+    }
+    $dir = $content . '/mu-plugins';
+    $file = $dir . '/locadev-tunnel-url.php';
+        // HTTP_HOST tetap <nama>.localhost di sisi origin (--http-host-header), jadi host publik
+    // dibaca dari X-Forwarded-Host yang HANYA dikirim cloudflared pada permintaan lewat tunnel.
+    $code = <<<'PHP'
+<?php
+/**
+ * Plugin Name: Locadev Tunnel URL
+ * Description: Pakai host publik saat situs diakses lewat Cloudflare Tunnel Locadev.
+ */
+$locadevPublic = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '';
+if (str_ends_with($locadevPublic, '.trycloudflare.com')) {
+    $locadevUrl = 'https://' . $locadevPublic;
+    $locadevLocal = 'https://' . ($_SERVER['HTTP_HOST'] ?? '');
+    add_filter('option_home', fn() => $locadevUrl);
+    add_filter('option_siteurl', fn() => $locadevUrl);
+    // Aset (wp-content, wp-includes, tema) dibuat dari konstanta yang sudah dihitung sebelum
+    // plugin ini dimuat, jadi host-nya diganti di filter URL masing-masing.
+    $locadevRewrite = fn($url) => str_replace($locadevLocal, $locadevUrl, (string) $url);
+    foreach (['content_url', 'includes_url', 'plugins_url', 'theme_root_uri',
+              'stylesheet_directory_uri', 'template_directory_uri', 'stylesheet_uri'] as $locadevFilter) {
+        add_filter($locadevFilter, $locadevRewrite);
+    }
+}
+PHP;
+    // sites/ tidak ikut git, jadi file ini dipasang Locadev sendiri (idempoten).
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    if (!is_file($file) || (string) @file_get_contents($file) !== $code) {
+        @file_put_contents($file, $code);
+    }
+}
+
+function start_site_tunnel(array $site, string $origin = 'https://localhost'): array {
+    global $baseDir;
+
+    $ready = ensure_cloudflared();
+    if (!$ready['success']) {
+        return $ready;
+    }
+
+    $id = (string) $site['id'];
+    $host = preg_replace('~[^a-z0-9.-]~i', '', trim(explode(',', (string) $site['domain'])[0]));
+    if ($host === '') {
+        return ['success' => false, 'error' => 'Site has no usable domain'];
+    }
+    ensure_tunnel_url_plugin($site);
+
+    $null = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+
+    // Origin selalu https://localhost + Host header situs → vhost Caddy yang tepat,
+    // tanpa bergantung pada resolusi DNS *.localhost (tidak universal di Windows).
+    $logDir = $baseDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'tunnels';
+    @mkdir($logDir, 0777, true);
+    $log = $logDir . DIRECTORY_SEPARATOR . $id . '.log';
+    @unlink($log);
+
+    // proc_open dengan descriptor berupa FILE + --logfile (bukan pipe, bukan Start-Process):
+    // anak tidak mewarisi pipe stdout PHP sehingga panggilan ini tidak menggantung.
+    // exec()/popen() + PowerShell Start-Process menggantung sampai cloudflared berhenti.
+    $proc = proc_open(
+        [
+            cloudflared_bin(), 'tunnel', '--url', $origin, '--no-tls-verify',
+            '--http-host-header', $host, '--logfile', $log,
+        ],
+        [0 => ['file', $null, 'r'], 1 => ['file', $null, 'w'], 2 => ['file', $null, 'w']],
+        $pipes,
+        null,
+        null,
+        ['bypass_shell' => true]
+    );
+    if (!is_resource($proc)) {
+        return ['success' => false, 'error' => 'Cannot start cloudflared'];
+    }
+    $pid = (int) proc_get_status($proc)['pid'];
+
+    // cloudflared mencetak URL beberapa detik setelah handshake.
+    $url = null;
+    for ($i = 0; $i < 40 && $url === null; $i++) {
+        usleep(500000);
+        $url = tunnel_url_from_log((string) @file_get_contents($log));
+    }
+
+    if ($url === null) {
+        stop_tunnel_pid($pid);
+        $lines = preg_split('~\R~', trim((string) @file_get_contents($log)));
+        $tail = trim(implode(' ', array_slice($lines ?: [], -2)));
+        return ['success' => false, 'error' => 'cloudflared did not come up' . ($tail !== '' ? ': ' . $tail : '')];
+    }
+
+    $tunnels = read_tunnels();
+    $tunnels[$id] = ['pid' => $pid, 'url' => $url, 'host' => $host, 'started' => time()];
+    write_tunnels($tunnels);
+    return ['success' => true, 'url' => $url, 'pid' => $pid];
+}
+
+
+function reload_caddy($caddyfile) {
+    $bin = frankenphp_bin();
+    if (!file_exists($bin)) {
+        return ['success' => false, 'error' => 'frankenphp binary not found'];
+    }
+    // Run synchronously: `frankenphp reload` signals the running server and exits, so
+    // the exit code is a real answer instead of an unconditional "success".
+    $out = [];
+    $code = 0;
+    exec(escapeshellarg($bin) . ' reload --config ' . escapeshellarg($caddyfile) . ' 2>&1', $out, $code);
+    if ($code !== 0) {
+        return ['success' => false, 'error' => 'Caddy reload failed: ' . implode(' ', array_slice($out, -2))];
+    }
+    return ['success' => true];
 }
 
 /** Server status snapshot, shared by the JSON endpoint and the HTMX metrics partial. */
@@ -421,19 +667,30 @@ function get_status_data() {
     if ($pdo) {
         $dbConnected = true;
         try {
-            $stmt = $pdo->query("SHOW DATABASES");
-            $dbCount = $stmt->rowCount();
+            // User databases only: same set the Databases view shows (system schemas excluded).
+            $all = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
+            $dbCount = count(array_diff($all, SYSTEM_DBS));
             $dbVersion = $pdo->query("SELECT VERSION()")->fetchColumn();
         } catch (Exception $e) {}
     }
 
+    // curl is an optional (toggleable) extension: probe the admin API over a socket
+    // instead of dying with "Call to undefined function curl_init()".
     $caddyOnline = false;
-    $ch = curl_init('http://127.0.0.1:2019/config/');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 1);
-    curl_exec($ch);
-    if (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) {
-        $caddyOnline = true;
+    if (function_exists('curl_init')) {
+        $ch = curl_init('http://127.0.0.1:2019/config/');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_exec($ch);
+        // no curl_close(): deprecated in PHP 8.5 (a no-op since 8.0) and its notice
+        // would corrupt the JSON/SSE output
+        $caddyOnline = curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200;
+    } else {
+        $sock = @fsockopen('127.0.0.1', 2019, $errno, $errstr, 1);
+        if ($sock) {
+            fclose($sock);
+            $caddyOnline = true;
+        }
     }
 
     $sites = load_sites_json($sitesJson, $sitesDir);
@@ -454,7 +711,7 @@ $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // Read request body for JSON posts
 $input = [];
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $raw = file_get_contents('php://input');
     if (!empty($raw)) {
         $json = json_decode($raw, true);
@@ -473,12 +730,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Output mode: HTMX partials (HTML) vs plain JSON. The CLI and the deploy stream
 // always speak JSON/SSE — they never send the HX-Request header.
 $isHx = (($_SERVER['HTTP_HX_REQUEST'] ?? '') === 'true') || isset($_GET['partial']);
-if ($isHx) {
-    header('Content-Type: text/html; charset=utf-8');
-    require_once __DIR__ . '/partials.php';
-    require_once __DIR__ . '/components.php';
-} else {
-    header('Content-Type: application/json; charset=utf-8');
+header('Content-Type: ' . ($isHx ? 'text/html' : 'application/json') . '; charset=utf-8');
+// Always loaded: the JSON path calls config_ini_values()/get_extensions_data() from here.
+require_once __DIR__ . '/partials.php';
+require_once __DIR__ . '/components.php';
+
+// CSRF fence: there is no auth and the dashboard answers on a loopback port that any
+// page the user visits can POST to. Loopback is not a defense against a form POST, so
+// reject state-changing requests whose Origin is not this host. Browsers always send
+// Origin on POST (and it cannot be forged by page JS); the CLI sends none and passes.
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($origin = $_SERVER['HTTP_ORIGIN'] ?? '') !== '') {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if (!in_array(parse_url($origin, PHP_URL_HOST), [$host, explode(':', $host)[0]], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Cross-origin request blocked']);
+        exit;
+    }
 }
 
 switch ($action) {
@@ -807,6 +1074,7 @@ switch ($action) {
             if (file_exists($caddyFileForSite)) {
                 @unlink($caddyFileForSite);
             }
+            stop_site_tunnel($id); // situs nonaktif tidak boleh tetap publik
         }
 
         save_sites_json($sitesJson, $sites);
@@ -822,6 +1090,45 @@ switch ($action) {
             'enabled' => $enabled,
             'caddy_reload' => $reloadResult
         ]);
+        break;
+
+    case 'toggle_tunnel':
+        $id = preg_replace('#[^a-z0-9_-]#i', '', $input['id'] ?? '');
+
+        $site = null;
+        foreach (load_sites_json($sitesJson, $sitesDir) as $s) {
+            if ($s['id'] === $id) {
+                $site = $s;
+                break;
+            }
+        }
+        if (!$site) {
+            echo json_encode(['success' => false, 'error' => 'Site not found']);
+            exit;
+        }
+
+        if (isset(read_tunnels()[$id])) {
+            stop_site_tunnel($id);
+            $result = ['success' => true, 'active' => false, 'message' => 'Public tunnel stopped'];
+        } elseif (empty($site['enabled'])) {
+            $result = ['success' => false, 'active' => false, 'error' => 'Enable the website first'];
+        } else {
+            $result = start_site_tunnel($site);
+            $result['active'] = $result['success'];
+        }
+
+        if ($isHx) {
+            if ($result['success']) {
+                hx_toast($result['active']
+                    ? 'Public URL: ' . $result['url'] . ' (anyone with the link can access it)'
+                    : 'Public tunnel stopped');
+            } else {
+                hx_toast('Tunnel failed: ' . $result['error'], true);
+            }
+            echo partial_sites($_GET + $_POST);
+            exit;
+        }
+        echo json_encode($result);
         break;
 
     case 'delete_site':
@@ -860,6 +1167,7 @@ switch ($action) {
             delete_directory_recursive($absRoot);
         }
 
+        stop_site_tunnel($id);
         save_sites_json($sitesJson, $filtered);
 
         // Optional drop DB
@@ -867,7 +1175,7 @@ switch ($action) {
             $pdo = get_pdo();
             if ($pdo) {
                 $cleanDb = preg_replace('#[^a-zA-Z0-9_]#', '', $targetSite['database']);
-                if (!empty($cleanDb) && !in_array($cleanDb, ['mysql', 'information_schema', 'performance_schema', 'sys'])) {
+                if (!empty($cleanDb) && !in_array($cleanDb, SYSTEM_DBS, true)) {
                     try {
                         $pdo->exec("DROP DATABASE IF EXISTS `{$cleanDb}`");
                     } catch (Exception $e) {}
@@ -929,7 +1237,7 @@ switch ($action) {
 
         $allDbs = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
         $result = [];
-        $systemDbs = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+        $systemDbs = SYSTEM_DBS;
         foreach ($allDbs as $name) {
             $isSystem = in_array($name, $systemDbs);
             $result[] = [
@@ -974,8 +1282,7 @@ switch ($action) {
 
     case 'drop_database':
         $name = preg_replace('#[^a-zA-Z0-9_]#', '', $input['name'] ?? '');
-        $systemDbs = ['information_schema', 'mysql', 'performance_schema', 'sys'];
-        if (in_array($name, $systemDbs)) {
+        if (in_array($name, SYSTEM_DBS, true)) {
             echo json_encode(['success' => false, 'error' => 'System databases cannot be deleted']);
             exit;
         }
@@ -1155,25 +1462,35 @@ switch ($action) {
         break;
 
     case 'restart_server':
-        $frankenphpBin = $baseDir . '/bin/frankenphp.exe';
+        $frankenphpBin = frankenphp_bin();
         if (!file_exists($frankenphpBin)) {
-            echo json_encode(['success' => false, 'error' => 'frankenphp.exe not found']);
+            echo json_encode(['success' => false, 'error' => 'frankenphp binary not found']);
             exit;
         }
-        // Detached batch: wait for this response to flush, kill FrankenPHP, relaunch
-        // (same flags as start.bat). MariaDB is not touched.
-        $tmpCmd = tempnam(sys_get_temp_dir(), 'locadev-restart');
-        rename($tmpCmd, $tmpCmd . '.cmd');
-        $tmpCmd .= '.cmd';
-        file_put_contents($tmpCmd,
-            "@echo off\r\n"
-            . "timeout /t 2 /nobreak >nul\r\n"
-            . "taskkill /F /IM frankenphp.exe >nul 2>&1\r\n"
-            . "timeout /t 1 /nobreak >nul\r\n"
-            . "set PHPRC={$baseDir}\\bin\r\n"
-            . "cd /d \"{$baseDir}\"\r\n"
-            . "start \"\" /b \"{$frankenphpBin}\" run --config Caddyfile\r\n");
-        pclose(popen('start /B cmd /C "' . $tmpCmd . '"', 'r'));
+        // Detached relaunch: wait for this response to flush, kill FrankenPHP, start it
+        // again with the same flags as the CLI. MariaDB is not touched.
+        if (PHP_OS_FAMILY === 'Windows') {
+            $tmpCmd = tempnam(sys_get_temp_dir(), 'locadev-restart');
+            rename($tmpCmd, $tmpCmd . '.cmd');
+            $tmpCmd .= '.cmd';
+            file_put_contents($tmpCmd,
+                "@echo off\r\n"
+                . "timeout /t 2 /nobreak >nul\r\n"
+                . "taskkill /F /IM frankenphp.exe >nul 2>&1\r\n"
+                . "timeout /t 1 /nobreak >nul\r\n"
+                . "set PHPRC={$baseDir}\\bin\r\n"
+                . "cd /d \"{$baseDir}\"\r\n"
+                . "start \"\" /b \"{$frankenphpBin}\" run --config Caddyfile\r\n");
+            pclose(popen('start /B cmd /C "' . $tmpCmd . '"', 'r'));
+        } else {
+            exec('sh -c ' . escapeshellarg(
+                'sleep 2; pkill -f ' . escapeshellarg($frankenphpBin)
+                . '; cd ' . escapeshellarg($baseDir)
+                . ' && PHPRC=' . escapeshellarg($baseDir . '/bin')
+                . ' nohup ' . escapeshellarg($frankenphpBin)
+                . ' run --config Caddyfile > /dev/null 2>&1 &'
+            ) . ' > /dev/null 2>&1 &');
+        }
 
         if ($isHx) {
             hx_toast('Restarting FrankenPHP — page will reload in ~5s');

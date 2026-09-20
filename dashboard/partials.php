@@ -13,7 +13,7 @@ function e($str): string {
 /** Material Symbols icon — SVG sprite (Arnative production pattern, weight 400). */
 function ico(string $name, int $size = 18): string {
     return '<svg class="msr" width="' . $size . '" height="' . $size . '" fill="currentColor" aria-hidden="true">'
-        . '<use href="assets/icons.svg?v=3#' . e($name) . '"></use></svg>';
+        . '<use href="assets/icons.svg?v=4#' . e($name) . '"></use></svg>';
 }
 
 /** Build an api.php URL with query params (htmx-safe: values urlencoded). */
@@ -158,15 +158,16 @@ function partial_sites(array $params): string {
 
     // Table
     $html .= '<div class="table-container"><table>'
-        . '<colgroup><col style="width:22%"><col style="width:26%"><col style="width:24%"><col style="width:12%"><col style="width:8%"><col style="width:112px"></colgroup>'
+        . '<colgroup><col style="width:22%"><col style="width:24%"><col style="width:22%"><col style="width:11%"><col style="width:7%"><col style="width:200px"></colgroup>'
         . '<thead><tr><th>Website</th><th>Domain</th><th>Directory</th><th>Database</th><th>Status</th><th style="text-align:right">Action</th></tr></thead><tbody>';
 
     if ($rows === []) {
         $html .= '<tr><td colspan="6" class="empty-cell"><p>' . ($q !== '' || $status !== 'all' ? 'No websites found matching filter.' : 'No websites yet.') . '</p>'
             . '<button type="button" class="btn btn-secondary btn-sm" onclick="openAddSiteModal()">' . ico('add', 13) . ' Create a new site</button></td></tr>';
     } else {
+        $tunnels = read_tunnels();
         foreach ($rows as $site) {
-            $html .= render_site_row($site);
+            $html .= render_site_row($site, $tunnels);
         }
     }
 
@@ -178,7 +179,29 @@ function partial_sites(array $params): string {
     return $html;
 }
 
-function render_site_row(array $site): string {
+/** Kontrol Cloudflare Tunnel di kolom Action (satu situs = satu tunnel publik). */
+function render_tunnel_action(string $id, string $name, ?array $tunnel): string {
+    $post = ' hx-post="' . e(hx_url('toggle_tunnel')) . '" hx-vals=\'{"id":"' . e($id) . '"}\''
+        . ' hx-trigger="click" hx-target="#view" hx-include="#sites-filters" hx-disabled-elt="this"';
+
+    if ($tunnel === null) {
+        // Menerbitkan tunnel makan waktu (unduh cloudflared + spawn, bisa >5 detik):
+        // data-progress memicu toast "sedang berjalan" di app.js.
+        return '<button type="button" class="icon-btn"' . $post . ' data-progress="Starting the public tunnel…"'
+            . ' title="Publish online via Cloudflare Tunnel" aria-label="Publish ' . e($name) . ' online">'
+            . ico('language', 16) . '</button>';
+    }
+
+    // Ikon saja (tanpa label terpotong): nama domain publik muncul saat hover.
+    return '<a class="icon-btn tunnel-on" href="' . e($tunnel['url']) . '" target="_blank" rel="noopener"'
+        . ' title="' . e($tunnel['url']) . '" aria-label="Open the public URL of ' . e($name) . ' in a new tab">'
+        . ico('link_2', 16) . '</a>'
+        . '<button type="button" class="icon-btn tunnel-on"' . $post
+        . ' title="Stop the public tunnel" aria-label="Stop the public tunnel for ' . e($name) . '">'
+        . ico('language', 16) . '</button>';
+}
+
+function render_site_row(array $site, array $tunnels = []): string {
     $id = $site['id'];
     $primaryDomain = trim(explode(',', $site['domain'])[0]);
     $cleanHost = preg_replace('#^https?://#i', '', $primaryDomain);
@@ -204,6 +227,7 @@ function render_site_row(array $site): string {
             'hx-include' => '#sites-filters',
         ]) . '</td>'
         . '<td style="text-align:right"><div class="row-actions">'
+        . render_tunnel_action($id, $site['name'], $tunnels[$id] ?? null)
         . '<button type="button" class="icon-btn" onclick="openEditSiteModal(\'' . e($id) . '\')" title="Edit site" aria-label="Edit site">' . ico('edit', 16) . '</button>'
         . '<button type="button" class="icon-btn icon-btn-danger"'
         . ' hx-post="' . e(hx_url('delete_site')) . '" hx-vals=\'{"id":"' . e($id) . '","delete_folder":true,"delete_db":true}\''
@@ -268,7 +292,7 @@ function partial_databases(array $params): string {
         $dbStats[$row['db_name']] = ['tables' => (int) $row['total_tables'], 'size_mb' => (float) ($row['size_mb'] ?? 0)];
     }
     $allDbs = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
-    $systemDbs = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+    $systemDbs = SYSTEM_DBS;
     $allDbs = array_values(array_filter($allDbs, fn(string $n) => $type === 'system' ? in_array($n, $systemDbs, true) : !in_array($n, $systemDbs, true)));
     if ($q !== '') {
         $allDbs = array_values(array_filter($allDbs, fn(string $n) => str_contains(strtolower($n), $q)));
@@ -305,7 +329,8 @@ function partial_databases(array $params): string {
 
     $html .= '</tbody></table>';
     if ($totalPages > 1) {
-        $dbExtra = $q !== '' ? ['q' => $q] : [];
+        // carry the tab through pagination, otherwise page 2 of "System" renders "User"
+        $dbExtra = array_filter(['q' => $q, 'type' => $type === 'system' ? 'system' : '']);
         $html .= render_pagination($page, $totalPages, 'databases', $dbExtra, $total, 'databases');
     }
     $html .= '</div>';
@@ -336,7 +361,7 @@ function partial_system_info(): string {
         $mariadbVer = $pdo->query('SELECT VERSION()')->fetchColumn();
         $datadir = $pdo->query("SHOW VARIABLES LIKE 'datadir'")->fetch(PDO::FETCH_ASSOC)['Value'] ?? '-';
         $userDbs = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
-        $systemDbs = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+        $systemDbs = SYSTEM_DBS;
         $userDbs = array_diff($userDbs, $systemDbs);
         $rows[] = ['MariaDB', 'v' . $mariadbVer . ' — connected (127.0.0.1:3306)'];
         $rows[] = ['MariaDB Data Directory', $datadir];

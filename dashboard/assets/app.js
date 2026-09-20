@@ -47,6 +47,30 @@ document.body.addEventListener('toastError', (e) => {
   if (msg) showToast(msg, true);
 });
 
+/* Toast progres: sebagian aksi makan beberapa detik (unduh cloudflared + spawn
+   tunnel), jadi user harus tahu prosesnya jalan — bukan diam lalu tiba-tiba selesai. */
+function showProgressToast(msg) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast progress';
+  toast.innerHTML = `<svg class="msr spinning" width="16" height="16" fill="currentColor" aria-hidden="true"><use href="assets/icons.svg#progress_activity"></use></svg><span>${escapeHtml(msg)}</span>`;
+  container.appendChild(toast);
+  return toast;
+}
+
+// Elemen ber-atribut data-progress menampilkan toast itu selama requestnya berjalan.
+document.body.addEventListener('htmx:before:request', (e) => {
+  const elt = e.detail?.elt || e.target;
+  if (elt?.dataset?.progress) elt._progressToast = showProgressToast(elt.dataset.progress);
+});
+document.body.addEventListener('htmx:after:request', (e) => {
+  const elt = e.detail?.elt || e.target;
+  if (elt?._progressToast) {
+    elt._progressToast.remove(); // hasil akhirnya tetap dari toast server (HX-Trigger)
+    elt._progressToast = null;
+  }
+});
+
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

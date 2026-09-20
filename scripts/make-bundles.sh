@@ -29,6 +29,7 @@ echo "==> locadev-bin-win-x64.zip"
     --exclude './phpdbg.exe' --exclude './php-cgi.exe' --exclude './php-win.exe' \
     --exclude './deplister.exe' --exclude './pharcommand.phar' --exclude './phar.phar.bat' \
     --exclude './php8apache2_4.dll' --exclude './php8embed.lib' --exclude './php8phpdbg.dll' \
+    --exclude './cloudflared.exe' --exclude './cloudflared' \
     --exclude './license.txt' --exclude './readme-redist-bins.txt' \
     .)
 
@@ -37,13 +38,17 @@ echo "==> locadev-repo.zip / locadev-repo.tar.gz"
 REPO_STAGE="$(mktemp -d)"
 mkdir -p "$REPO_STAGE/locadev-main"
 for item in .gitignore Caddyfile README.md install.ps1 install.sh \
-            config dashboard start.bat stop.bat start.sh stop.sh; do
+            config dashboard scripts start.bat stop.bat start.sh stop.sh; do
     [ -e "$ROOT/$item" ] && cp -r "$ROOT/$item" "$REPO_STAGE/locadev-main/"
 done
 # bin/: only the two small CLI scripts - binaries ship in locadev-bin-win-x64.zip
 mkdir -p "$REPO_STAGE/locadev-main/bin"
 cp "$ROOT/bin/locadev" "$ROOT/bin/locadev.cmd" "$REPO_STAGE/locadev-main/bin/"
 rm -f  "$REPO_STAGE/locadev-main/config/sites.json"
+# User data must never ship: a leftover demo*.caddy makes fresh installs show phantom
+# sites pointing at directories that do not exist (sites.json is gone, so the loader
+# falls back to globbing config/sites/*.caddy).
+rm -f  "$REPO_STAGE/locadev-main/config/sites/"*.caddy
 mkdir -p "$REPO_STAGE/locadev-main/sites" "$REPO_STAGE/locadev-main/config/sites"
 touch "$REPO_STAGE/locadev-main/sites/.gitkeep"
 

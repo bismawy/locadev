@@ -13,9 +13,9 @@
       document.documentElement.classList.toggle('dark', isDark);
     })();
   </script>
-  <link rel="stylesheet" href="assets/css/app.css?v=30">
+  <link rel="stylesheet" href="assets/css/app.css?v=31">
   <script src="assets/htmx.min.js?v=2" defer></script>
-  <script src="assets/app.js?v=14" defer></script>
+  <script src="assets/app.js?v=15" defer></script>
 </head>
 <body>
 
@@ -85,7 +85,8 @@
           <span class="status-port">3306</span>
         </div>
       </div>
-      <div class="foot-versions">Locadev <span id="locadev-version">1.0.0</span></div>
+      <!-- fallback only: the status poll refreshes this from LOCODEV_VERSION -->
+      <div class="foot-versions">Locadev <span id="locadev-version">1.2.0</span></div>
     </div>
   </aside>
 
