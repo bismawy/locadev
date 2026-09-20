@@ -15,7 +15,7 @@
   </script>
   <link rel="stylesheet" href="assets/css/app.css?v=31">
   <script src="assets/htmx.min.js?v=2" defer></script>
-  <script src="assets/app.js?v=15" defer></script>
+  <script src="assets/app.js?v=16" defer></script>
 </head>
 <body>
 

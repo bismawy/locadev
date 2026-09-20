@@ -47,6 +47,18 @@ ARCHIVE=(git -C "$ROOT" -c core.autocrlf=false archive --worktree-attributes --p
 "${ARCHIVE[@]}" --format=zip > "$DIST/locadev-repo.zip"
 "${ARCHIVE[@]}" --format=tgz > "$DIST/locadev-repo.tar.gz"
 
+# Last line of defence: git archive cannot emit untracked files, but this still fails the build
+# the day someone swaps the build step back to copying the working tree (how v1.0.0/v1.1.0 leaked).
+repo_user_data() {
+    "$BSDTAR" -tf "$1" | grep -E '(^|/)(config/sites/[^/]+\.caddy|config/sites\.json|data/|sites/[^/]+/)'
+}
+LEAK="$(repo_user_data "$DIST/locadev-repo.zip" || true)"
+if [ -n "$LEAK" ]; then
+    echo "ERROR: repo bundle carries user data - refusing to publish it:" >&2
+    echo "$LEAK" >&2
+    exit 1
+fi
+
 echo ""
 ls -lh "$DIST"
 echo ""
