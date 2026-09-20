@@ -8,7 +8,7 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.2.0');
+define('LOCODEV_VERSION', '1.3.0');
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
 const SYSTEM_DBS = ['information_schema', 'mysql', 'performance_schema', 'sys'];

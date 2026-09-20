@@ -86,7 +86,7 @@
         </div>
       </div>
       <!-- fallback only: the status poll refreshes this from LOCODEV_VERSION -->
-      <div class="foot-versions">Locadev <span id="locadev-version">1.2.0</span></div>
+      <div class="foot-versions">Locadev <span id="locadev-version">1.3.0</span></div>
     </div>
   </aside>
 
