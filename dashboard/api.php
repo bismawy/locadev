@@ -414,6 +414,53 @@ function frankenphp_bin() {
         . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
 }
 
+/**
+ * Versi runtime yang benar-benar terpasang (bukan yang diharapkan).
+ *
+ * FrankenPHP menyatukan PHP + Caddy dalam satu biner, jadi satu eksekusi `version`
+ * memberi ketiganya sekaligus (~0,15 dtk). cloudflared biner terpisah dan hanya ada
+ * setelah tombol terowongan pertama diklik. Hasil dikunci per request: penguraian
+ * regex gagal senyap kalau format upstream berubah, karena itu ada cek di self-check.
+ *
+ * @return array{frankenphp:string,php:string,caddy:string,cloudflared:string}
+ */
+function runtime_versions(): array {
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    $cache = ['frankenphp' => '', 'php' => '', 'caddy' => '', 'cloudflared' => ''];
+
+    $fp = frankenphp_bin();
+    if (is_file($fp)) {
+        $out = [];
+        exec(escapeshellarg($fp) . ' version 2>&1', $out);
+        $text = implode(' ', $out); // "FrankenPHP 1.12.7 PHP 8.5.10 Caddy v2.11.4 h1:..."
+        $patterns = [
+            'frankenphp' => '/FrankenPHP\s+([0-9][0-9.]*)/i',
+            'php' => '/PHP\s+([0-9][0-9.]*)/',
+            'caddy' => '/Caddy\s+v?([0-9][0-9.]*)/i',
+        ];
+        foreach ($patterns as $key => $re) {
+            if (preg_match($re, $text, $m)) {
+                $cache[$key] = $m[1];
+            }
+        }
+    }
+
+    $cf = cloudflared_bin();
+    if (is_file($cf)) {
+        $out = [];
+        exec(escapeshellarg($cf) . ' --version 2>&1', $out);
+        if (preg_match('/cloudflared\s+version\s+([0-9][0-9.]*)/i', implode(' ', $out), $m)) {
+            $cache['cloudflared'] = $m[1];
+        }
+    }
+
+    return $cache;
+}
+
 /* ================= Cloudflare Quick Tunnel (trycloudflare.com) ================= */
 /** Satu situs = satu cloudflared; state runtime ada di data/tunnels.json (gitignored). */
 

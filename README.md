@@ -190,7 +190,7 @@ locadev start
 
 Locadev keeps using its own `data/mariadb` and config either way. When the MariaDB binary changes - bundled update or override - `locadev start` notices and runs `mariadb-upgrade` once, so an older data directory is repaired instead of left serving errors. The version it last upgraded for is written to `data/mariadb/.locadev-version`; delete that file to force a re-check. If the upgrade fails, the start prints the command to run by hand and your data is untouched.
 
-Current versions are on the dashboard (System Info panel and the PHP Runtime card).
+Current versions are on the dashboard: System Info reads them straight from the binaries — FrankenPHP together with the PHP and Caddy it embeds, MariaDB, and cloudflared ("not downloaded yet" until the first tunnel) — and the PHP Runtime card shows the PHP build. The **Copy version summary** button there puts a plain-text block on your clipboard for bug reports.
 
 </details>
 

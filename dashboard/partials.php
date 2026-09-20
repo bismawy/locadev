@@ -13,7 +13,7 @@ function e($str): string {
 /** Material Symbols icon — SVG sprite (Arnative production pattern, weight 400). */
 function ico(string $name, int $size = 18): string {
     return '<svg class="msr" width="' . $size . '" height="' . $size . '" fill="currentColor" aria-hidden="true">'
-        . '<use href="assets/icons.svg?v=4#' . e($name) . '"></use></svg>';
+        . '<use href="assets/icons.svg?v=5#' . e($name) . '"></use></svg>';
 }
 
 /** Build an api.php URL with query params (htmx-safe: values urlencoded). */
@@ -344,6 +344,16 @@ function partial_system_info(): string {
 
     $sites = load_sites_json($sitesJson, dirname($sitesJson));
 
+    // Versi dibaca dari binernya, bukan dari PHP yang sedang melayani: situs bisa jalan
+    // di biner yang berbeda dari yang melayani dashboard ini.
+    $rt = runtime_versions();
+    $webServer = $rt['frankenphp'] !== ''
+        ? 'FrankenPHP ' . $rt['frankenphp'] . ($rt['caddy'] !== '' ? ' — Caddy v' . $rt['caddy'] : '')
+        : ($_SERVER['SERVER_SOFTWARE'] ?? 'FrankenPHP');
+    $tunnelLine = $rt['cloudflared'] !== ''
+        ? 'cloudflared ' . $rt['cloudflared']
+        : 'cloudflared not downloaded yet (bin/cloudflared)';
+
     $rows = [
         ['Operating System', PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r')],
         ['Machine', php_uname('m')],
@@ -351,7 +361,8 @@ function partial_system_info(): string {
         ['PHP Configuration', php_ini_loaded_file() ?: 'php.ini not found'],
         ['PHP Extensions', count(get_loaded_extensions()) . ' loaded'],
         ['Memory Limit', ini_get('memory_limit')],
-        ['Web Server', $_SERVER['SERVER_SOFTWARE'] ?? 'FrankenPHP'],
+        ['Web Server', $webServer],
+        ['Cloudflare Tunnel', $tunnelLine],
         ['Document Root', $_SERVER['DOCUMENT_ROOT'] ?? '-'],
         ['Locadev Directory', $baseDir],
     ];
@@ -379,7 +390,26 @@ function partial_system_info(): string {
         $rows[] = ['Disk', sprintf('%.1f GB free of %.1f GB', $diskFree / 1e9, $diskTotal / 1e9)];
     }
 
-    $html = '<div class="table-container"><table>'
+    // Ringkasan teks polos untuk laporan bug: versinya menempel di data-copy tombol,
+    // jadi tidak perlu elemen tersembunyi kedua yang bisa menyimpang dari tabel.
+    $summary = implode("\n", [
+        'Locadev ' . LOCODEV_VERSION,
+        PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r') . ' (' . php_uname('m') . ')',
+        $webServer,
+        'PHP ' . PHP_VERSION . ' (' . php_sapi_name() . ') — ' . count(get_loaded_extensions()) . ' extensions',
+        $pdo ? 'MariaDB v' . $mariadbVer : 'MariaDB not connected',
+        $tunnelLine,
+    ]);
+
+    $html = '<div class="unified-toolbar"><div class="toolbar-left">'
+        . '<span class="cell-muted" style="font-size:0.8125rem">What Locadev runs, and which build of it — versions come from the binaries themselves.</span>'
+        . '</div><div class="toolbar-right">'
+        . '<button type="button" class="btn btn-secondary btn-sm" data-copy="' . e($summary) . '"'
+        . ' title="Copy a plain-text version summary for bug reports">'
+        . ico('content_copy', 14) . '<span>Copy version summary</span></button>'
+        . '</div></div>';
+
+    $html .= '<div class="table-container"><table>'
         . '<colgroup><col style="width:30%"><col style="width:70%"></colgroup>'
         . '<thead><tr><th>Component</th><th>Value</th></tr></thead><tbody>';
     foreach ($rows as [$label, $value]) {

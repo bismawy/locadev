@@ -512,3 +512,15 @@ document.body.addEventListener('htmx:after:swap', () => { // htmx 4: nama event 
   updateConfigDirty();
 });
 resetConfigSnapshot(); // initial load
+
+/* ---------- Salin ringkasan versi (System Info) ---------- */
+// Teksnya ditaruh server di data-copy tombol, jadi cuma satu sumber dan tidak ada
+// elemen tersembunyi yang bisa basi setelah htmx swap. Delegasi aman setelah swap.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-copy]');
+  if (!btn) return;
+  navigator.clipboard.writeText(btn.dataset.copy || '').then(
+    () => showToast('Version summary copied'),
+    () => showToast('Clipboard blocked by the browser', true)
+  );
+});

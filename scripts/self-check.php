@@ -161,6 +161,18 @@ check('db-upgrade.php records the MariaDB version (and restores the marker)', (f
     return (bool) $ok;
 })());
 
+echo "Runtime versions\n";
+// Versi diurai dari output biner dengan regex: kalau format upstream berubah, tabel
+// System Info diam-diam menampilkan versi kosong — cek ini yang menangkapnya.
+check('runtime_versions() reads FrankenPHP, PHP and Caddy versions from the binary', (function (): bool {
+    if (!is_file(frankenphp_bin())) {
+        return true; // instalasi tanpa biner: tidak ada yang bisa diuji
+    }
+    $v = runtime_versions();
+    $semver = static fn(string $s): bool => (bool) preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/', $s);
+    return $semver($v['frankenphp']) && $semver($v['php']) && $semver($v['caddy']);
+})());
+
 ob_end_flush();
 echo $fail === 0 ? "\nALL CHECKS PASSED\n" : "\n$fail CHECK(S) FAILED\n";
 exit($fail === 0 ? 0 : 1);
