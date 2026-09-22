@@ -240,6 +240,20 @@ The **globe button** in a site's *Actions* column publishes that single site to 
 
 Each site's log lives in `data/tunnels/<id>.log`; running tunnels are tracked in `data/tunnels.json`.
 
+## AdminNeo (optional)
+
+The Databases page links to [AdminNeo](https://www.adminneo.org/) at `https://adminneo.localhost` — a
+one-file database manager served from `data/adminer`, loopback-only, under the same protection as the
+dashboard. Default login is `root` / `locadev`: **`locadev` is the application password**, while the
+MariaDB root it connects as has no password.
+
+Those files live in `data/`, which no release and no installer ever writes — they are user data, and
+the config next to them holds your own password. So a fresh install has none, and the Databases page
+shows **Install AdminNeo** instead of a link that would 404. That button downloads Locadev's mirror of
+the file (`adminneo-<version>.zip` on the release, Apache-2.0 or GPL-2 — upstream publishes no release
+asset and keeps `adminneo.php` out of its repository) and writes it with a default config. To change
+the password, edit `data/adminer/adminneo-config.php`; nothing overwrites an existing config.
+
 ## Dual-Boot: Same Sites on Windows & Linux
 
 Share **code and config** between OSes; each OS keeps its own database.

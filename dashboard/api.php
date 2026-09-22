@@ -8,7 +8,15 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.4.0');
+define('LOCODEV_VERSION', '1.4.1');
+
+/**
+ * AdminNeo is mirrored on Locadev's own releases: upstream ships no asset and no adminneo.php in
+ * the repository. Bump both together with the file in dist/ when a newer AdminNeo is taken.
+ */
+const ADMINNEO_VERSION = '5.7.1';
+const ADMINNEO_ASSET = 'adminneo-5.7.1.zip';
+const ADMINNEO_URL = 'https://adminneo.localhost';
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
 const SYSTEM_DBS = ['information_schema', 'mysql', 'performance_schema', 'sys'];
@@ -499,6 +507,104 @@ function cloudflared_asset(): ?string {
     $arch = (str_contains($machine, 'arm64') || str_contains($machine, 'aarch64')) ? 'arm64' : 'amd64';
     $suffix = $os === 'windows' ? '.exe' : ($os === 'darwin' ? '.tgz' : '');
     return 'cloudflared-' . $os . '-' . $arch . $suffix;
+}
+
+/* ================= AdminNeo (optional DB manager) ================= */
+
+function adminneo_dir(): string {
+    global $baseDir;
+    return $baseDir . '/data/adminer';
+}
+
+/** Installed = the entry point and the program itself are both there. */
+function adminneo_installed(): bool {
+    return is_file(adminneo_dir() . '/adminneo.php') && is_file(adminneo_dir() . '/index.php');
+}
+
+/** AdminNeo config: application login root/locadev, DB root without a password. */
+function adminneo_config_php(): string {
+    return "<?php\n"
+        . "// AdminNeo config — login aplikasi: user \"root\" + password \"locadev\"\n"
+        . "// (password level aplikasi, BUKAN password MariaDB — DB root terhubung tanpa password).\n"
+        . "// Aman karena Caddyfile bind loopback-only. Ubah hash di bawah untuk ganti password.\n"
+        . "return [\n"
+        . "\t\"defaultDriver\" => \"mysql\",\n"
+        . "\t\"defaultPasswordHash\" => '" . password_hash('locadev', PASSWORD_DEFAULT) . "',\n"
+        . "\t\"servers\" => [\n"
+        . "\t\t[\n"
+        . "\t\t\t\"driver\" => \"mysql\",\n"
+        . "\t\t\t\"name\" => \"Locadev MariaDB\",\n"
+        . "\t\t\t\"server\" => \"127.0.0.1\",\n"
+        . "\t\t\t\"username\" => \"root\",\n"
+        . "\t\t\t\"password\" => \"\",\n"
+        . "\t\t],\n"
+        . "\t],\n"
+        . "\t\"defaultServer\" => 0,\n"
+        . "];\n";
+}
+
+/**
+ * Fetch AdminNeo on demand, the way ensure_cloudflared() does.
+ *
+ * AdminNeo is one PHP file, but upstream publishes NO release asset and keeps adminneo.php out of
+ * the repository (bin/compile.php builds it from vendor/), so there is no upstream URL to fetch.
+ * Locadev mirrors the file on its own releases instead (Apache-2.0, LICENSE.md included).
+ * The file lives in data/, which no release or installer ever writes: it is user data, and the
+ * config next to it holds the user's own password. Nothing here is overwritten once installed.
+ */
+function ensure_adminneo(): array {
+    if (adminneo_installed()) {
+        return ['success' => true, 'already' => true];
+    }
+    if (!ini_get('allow_url_fopen')) {
+        return ['success' => false, 'error' => 'allow_url_fopen is disabled — cannot download AdminNeo'];
+    }
+    if (!class_exists('ZipArchive')) {
+        return ['success' => false, 'error' => 'The zip extension is not loaded — cannot unpack AdminNeo'];
+    }
+
+    $dir = adminneo_dir();
+    @mkdir($dir, 0777, true);
+    $tmp = $dir . '/adminneo.zip.part';
+    $url = 'https://github.com/' . LOCADEV_REPO . '/releases/latest/download/' . ADMINNEO_ASSET;
+
+    set_time_limit(0);
+    $ctx = stream_context_create(['http' => ['timeout' => 300, 'user_agent' => 'locadev']]);
+    if (!@copy($url, $tmp) || filesize($tmp) < 100000) { // <100 KB = halaman error, bukan programnya
+        @unlink($tmp);
+        return ['success' => false, 'error' => 'Download failed (no network, or the Locadev release has no ' . ADMINNEO_ASSET . ')'];
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmp) !== true) {
+        @unlink($tmp);
+        return ['success' => false, 'error' => 'Cannot open the downloaded archive'];
+    }
+    // Archive comes over the network: refuse anything that would extract outside data/adminer.
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $name = (string) $zip->getNameIndex($i);
+        if (str_contains($name, '..') || str_starts_with($name, '/') || str_contains($name, ':')) {
+            $zip->close();
+            @unlink($tmp);
+            return ['success' => false, 'error' => 'Refusing an archive with unexpected paths']; 
+        }
+    }
+    $zip->extractTo($dir);
+    $zip->close();
+    @unlink($tmp);
+
+    if (!is_file($dir . '/adminneo.php')) {
+        return ['success' => false, 'error' => 'The archive did not contain adminneo.php'];
+    }
+    // index.php + config only when missing, so a re-run never touches an edited config.
+    if (!is_file($dir . '/index.php')) {
+        @file_put_contents($dir . '/index.php', "<?php\nrequire __DIR__ . '/adminneo.php';\n");
+    }
+    if (!is_file($dir . '/adminneo-config.php')) {
+        @file_put_contents($dir . '/adminneo-config.php', adminneo_config_php());
+    }
+
+    return ['success' => true];
 }
 
 /** Unduh cloudflared sekali saja (~50 MB) dari GitHub releases. */
@@ -1380,6 +1486,21 @@ switch ($action) {
             exit;
         }
         echo json_encode(locadev_check_json($baseDir));
+        break;
+
+    case 'install_adminneo':
+        $result = ensure_adminneo();
+        if ($isHx) {
+            hx_toast(
+                $result['success']
+                    ? (($result['already'] ?? false) ? 'AdminNeo is already installed' : 'AdminNeo installed — open it from the button')
+                    : 'AdminNeo: ' . $result['error'],
+                !$result['success']
+            );
+            echo partial_databases($_GET);
+            exit;
+        }
+        echo json_encode($result);
         break;
 
     case 'create_php_ini':

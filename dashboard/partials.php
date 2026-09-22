@@ -404,10 +404,22 @@ function partial_databases(array $params): string {
         . '</div>'
         . '</form>'
         . '<div class="toolbar-right">'
-        . '<a class="btn btn-secondary" href="https://adminneo.localhost" target="_blank" rel="noopener" title="Open AdminNeo — DB management (login: root / locadev)">'
-        . ico('open_in_new', 14) . '<span>AdminNeo</span></a>'
+        // No dead link: with nothing in data/adminer the button installs it instead of opening a 404.
+        . (adminneo_installed()
+            ? '<a class="btn btn-secondary" href="' . e(ADMINNEO_URL) . '" target="_blank" rel="noopener" title="Open AdminNeo — DB management (login: root / locadev)">'
+                . ico('open_in_new', 14) . '<span>AdminNeo</span></a>'
+            : '<button type="button" class="btn btn-secondary" hx-post="' . e(hx_url('install_adminneo')) . '"'
+                . ' hx-target="#view" hx-swap="innerHTML" hx-disable="this"' . spin_attrs()
+                . ' title="Download AdminNeo ' . e(ADMINNEO_VERSION) . ' (one PHP file, Apache-2.0) into data/adminer">'
+                . ico('add', 14) . '<span>Install AdminNeo</span></button>')
         . '<button type="button" class="btn btn-secondary" onclick="openCreateDbModal()">' . ico('add', 14) . '<span>Create Database</span></button>'
         . '</div></div>';
+
+    if (!adminneo_installed()) {
+        $html .= '<div class="cell-muted" style="margin:0 1rem 0.75rem;font-size:0.8125rem">'
+            . 'AdminNeo — the DB manager at ' . e(ADMINNEO_URL) . ' — is not in this copy: no release or installer writes '
+            . 'data/adminer (it is user data). The button above fetches it from the Locadev release.</div>';
+    }
 
     $pdo = get_pdo();
     if (!$pdo) {
