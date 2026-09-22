@@ -20,7 +20,7 @@ $sidebarVersion = $m[1] ?? '';
       document.documentElement.classList.toggle('dark', isDark);
     })();
   </script>
-  <link rel="stylesheet" href="assets/css/app.css?v=31">
+  <link rel="stylesheet" href="assets/css/app.css?v=32">
   <script src="assets/htmx.min.js?v=2" defer></script>
   <script src="assets/app.js?v=16" defer></script>
 </head>
@@ -119,6 +119,8 @@ $sidebarVersion = $m[1] ?? '';
         <div class="header-actions">
           <button class="btn btn-secondary btn-header btn-reload" type="button"
                   hx-post="api.php?action=reload_server" hx-swap="none" hx-disable="this"
+                  hx-on::before:request="this.querySelector('.msr').classList.add('spinning')"
+                  hx-on::after:request="this.querySelector('.msr').classList.remove('spinning')"
                   title="Reload Caddy configuration without downtime">
             <svg class="msr" width="15" height="15" fill="currentColor" aria-hidden="true"><use href="assets/icons.svg#refresh"></use></svg>
             <span class="btn-text">Reload Server</span>

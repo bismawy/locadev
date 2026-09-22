@@ -18,6 +18,12 @@
   border: 1px solid transparent;
   user-select: none;
 }
+/* Ikon refresh yang berputar selama request htmx-nya berjalan: dipasang/ dilepas lewat
+   hx-on::before/after:request pada tombolnya. Keyframes spin ada di progress.css. */
+.btn .msr.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
 .btn-primary {
   background: var(--primary);
   color: var(--primary-fg);

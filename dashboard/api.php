@@ -1372,10 +1372,32 @@ switch ($action) {
 
     case 'update':
         if ($isHx) {
+            // The check itself is the answer: same one-line text in the panel and as a toast, so
+            // the button gives feedback without the page having to be read.
+            $status = update_status_text();
+            hx_toast($status['toast'], $status['error']);
             echo partial_update_response(false);
             exit;
         }
         echo json_encode(locadev_check_json($baseDir));
+        break;
+
+    case 'create_php_ini':
+        // Linux/macOS installs have no php.ini (static FrankenPHP). PHPRC points PHP at bin/, so
+        // writing the recommended defaults here makes the Configuration page usable there.
+        $ini = $baseDir . '/bin/php.ini';
+        if (is_file($ini)) {
+            hx_toast('php.ini already exists', true);
+        } elseif (@file_put_contents($ini, php_ini_defaults()) === false) {
+            hx_toast('Could not write bin/php.ini', true);
+        } else {
+            hx_toast('php.ini created — Restart Server to apply');
+        }
+        if ($isHx) {
+            echo partial_configuration();
+            exit;
+        }
+        echo json_encode(['success' => is_file($ini), 'path' => $ini]);
         break;
 
     case 'update_run':
@@ -1601,12 +1623,30 @@ switch ($action) {
                 . "start \"\" /b \"{$frankenphpBin}\" run --config Caddyfile\r\n");
             pclose(popen('start /B cmd /C "' . $tmpCmd . '"', 'r'));
         } else {
+            // Graceful stop through Caddy's admin API first, then a PRECISE pkill. Matching the
+            // absolute binary path missed servers started as `./bin/frankenphp` (start.sh), so the
+            // old process kept serving while the new one died on a port already in use - the
+            // button said "restarting" and nothing restarted. "bin/frankenphp run" matches both
+            // start styles and still spares `frankenphp php-cli <script>` children (an update).
             exec('sh -c ' . escapeshellarg(
-                'sleep 2; pkill -f ' . escapeshellarg($frankenphpBin)
-                . '; cd ' . escapeshellarg($baseDir)
+                // 1. stop gracefully, 2. kill precisely, 3. WAIT for the process to be gone, 4. only
+                // then relaunch, 5. wait until it actually answers. Starting before the old process
+                // released :443 made the new one die on a busy port - the button reported success
+                // and the dashboard went dark.
+                'curl -s -X POST http://127.0.0.1:2019/stop >/dev/null 2>&1; '
+                . 'for i in 1 2 3 4 5 6 7 8 9 10; do curl -sk -o /dev/null https://localhost/ || break; sleep 1; done; '
+                // Fallback for a server that ignored the admin stop. The pattern is assembled at run
+                // time on purpose: written literally it also matches THIS script's command line, and
+                // pkill -f then kills the wrapper before it can relaunch anything (exit 143, silent).
+                . 'P=bin/frank; pkill -f "${P}enphp run" 2>/dev/null; sleep 1; '
+                . 'cd ' . escapeshellarg($baseDir)
                 . ' && PHPRC=' . escapeshellarg($baseDir . '/bin')
+                // Log to data/, not /dev/null: when a relaunch fails to bind, the reason has to
+                // survive somewhere the user can read (data/frankenphp.log, gitignored with data/).
                 . ' nohup ' . escapeshellarg($frankenphpBin)
-                . ' run --config Caddyfile > /dev/null 2>&1 &'
+                . ' run --config Caddyfile >> ' . escapeshellarg($baseDir . '/data/frankenphp.log') . ' 2>&1 & '
+                . 'for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do '
+                . 'curl -sk -o /dev/null https://localhost/ && break; sleep 1; done'
             ) . ' > /dev/null 2>&1 &');
         }
 

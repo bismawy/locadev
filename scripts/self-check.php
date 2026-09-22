@@ -205,6 +205,23 @@ check('runtime_versions() reads FrankenPHP, PHP and Caddy versions from the bina
     return $semver($v['frankenphp']) && $semver($v['php']) && $semver($v['caddy']);
 })());
 
+echo "PHP configuration\n";
+// php_ini_defaults() is what the dashboard writes on an install with no php.ini (Linux/macOS).
+// The page reads that file back with config_ini_values(), so both sides must agree on the format.
+check('php_ini_defaults() round-trips through config_ini_values()', (function () use ($root): bool {
+    require_once $root . '/dashboard/partials.php';
+    $tmp = sys_get_temp_dir() . '/locadev-selfcheck-' . bin2hex(random_bytes(4)) . '.ini';
+    if (@file_put_contents($tmp, php_ini_defaults()) === false) {
+        return false;
+    }
+    $values = config_ini_values($tmp);
+    $expected = array_keys(config_directives());
+    @unlink($tmp);
+    return array_keys($values) === $expected
+        && $values['display_errors'] === 'On'
+        && preg_match('/^[0-9]+M$/', (string) $values['memory_limit']) === 1;
+})());
+
 echo "Update (thin layer)\n";
 // Salinan update adalah satu-satunya jalur di Locadev yang bisa menghapus berkas pengguna:
 // sites/ dan config/sites.json adalah symlink ke folder bersama Windows pada setup dual-boot

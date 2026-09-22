@@ -16,6 +16,15 @@ function ico(string $name, int $size = 18): string {
         . '<use href="assets/icons.svg?v=5#' . e($name) . '"></use></svg>';
 }
 
+/**
+ * htmx handlers that spin a button's icon while its request is in flight (CSS .btn .msr.spinning).
+ * Inline, like the existing hx-on::before/after:request handlers - no extra JS file.
+ */
+function spin_attrs(): string {
+    return ' hx-on::before:request="this.querySelector(\'.msr\').classList.add(\'spinning\')"'
+        . ' hx-on::after:request="this.querySelector(\'.msr\').classList.remove(\'spinning\')"';
+}
+
 /** Build an api.php URL with query params (htmx-safe: values urlencoded). */
 function hx_url(string $action, array $params = []): string {
     $params['action'] = $action;
@@ -136,35 +145,59 @@ function partial_update_response(bool $oobPanel): string {
         . partial_update_poller(!$done);
 }
 
-/** Version check + Update button + log of the last run. */
-function partial_update(): string {
+/**
+ * The one comparison behind both the panel line and the toast, so they cannot disagree.
+ *
+ * @return array{note:string,toast:string,error:bool,available:bool}
+ */
+function update_status_text(): array {
     global $baseDir;
 
     $installed = locadev_version($baseDir);
     $latest = locadev_latest_tag();
-    $button = '';
 
     if ($latest === '') {
-        $note = 'Could not reach GitHub to read the newest release. Nothing was changed.';
-    } elseif ($installed === '') {
-        $note = 'Installed version unreadable - cannot tell if an update is needed.';
-    } elseif (version_compare($latest, $installed, '>')) {
-        $note = 'Locadev ' . $latest . ' is available. You are on ' . $installed . '; your sites, data and registry stay as they are.';
+        return ['note' => 'Could not reach GitHub — nothing was changed.', 'toast' => 'GitHub unreachable', 'error' => true, 'available' => false];
+    }
+    if ($installed === '') {
+        return ['note' => 'Installed version unreadable — cannot tell if an update is needed.', 'toast' => 'Version unreadable', 'error' => true, 'available' => false];
+    }
+    if (version_compare($latest, $installed, '>')) {
+        return [
+            'note' => 'Locadev ' . $latest . ' is available — you have ' . $installed . '.',
+            'toast' => $latest . ' available — you have ' . $installed,
+            'error' => false,
+            'available' => true,
+        ];
+    }
+    if ($latest === $installed) {
+        return ['note' => 'You are on the newest release.', 'toast' => 'Up to date — ' . $installed, 'error' => false, 'available' => false];
+    }
+    return [
+        'note' => 'Ahead of the published release: you have ' . $installed . ', newest is ' . $latest . '.',
+        'toast' => 'Ahead — ' . $installed . ' vs ' . $latest,
+        'error' => false,
+        'available' => false,
+    ];
+}
+
+/** Version check + Update button + log of the last run. */
+function partial_update(): string {
+    $status = update_status_text();
+    $note = $status['note'];
+    $button = '';
+
+    if ($status['available']) {
         $button = '<button type="button" class="btn btn-primary btn-sm"'
             . ' hx-post="api.php?action=update_run" hx-target="#update-panel" hx-swap="innerHTML" hx-disable="this"'
-            . ' title="Update scripts, dashboard and CLI in place">'
+            . spin_attrs() . ' title="Update scripts, dashboard and CLI in place">'
             . ico('refresh', 14) . '<span>Update now</span></button>';
-    } elseif ($latest === $installed) {
-        $note = 'You are on the newest release (' . $installed . ').';
-    } else {
-        // Local build ahead of the newest published release: honest, not "you are newest".
-        $note = 'You are on ' . $installed . ', ahead of the newest published release (' . $latest . ').';
     }
 
     [$text, $done] = update_log_state();
     if ($text !== '' && $done && str_contains($text, '[update] Done')) {
         $button .= '<button type="button" class="btn btn-secondary btn-sm"'
-            . ' hx-post="api.php?action=restart_server" hx-swap="none" hx-disable="this"'
+            . ' hx-post="api.php?action=restart_server" hx-swap="none" hx-disable="this"' . spin_attrs()
             . ' title="Serve the updated files">' . ico('refresh', 14) . '<span>Restart server</span></button>';
     }
 
@@ -450,7 +483,7 @@ function partial_system_info(): string {
         ['Operating System', PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r')],
         ['Machine', php_uname('m')],
         ['PHP Version', PHP_VERSION . ' (' . php_sapi_name() . ')'],
-        ['PHP Configuration', php_ini_loaded_file() ?: 'no php.ini (static build — settings come from the Caddyfile)'],
+        ['PHP Configuration', php_ini_loaded_file() ?: 'no php.ini (PHP build defaults apply — create one on the Configuration page)'],
         ['PHP Extensions', count(get_loaded_extensions()) . ' loaded'],
         ['Memory Limit', ini_get('memory_limit')],
         ['Web Server', $webServer],
@@ -579,6 +612,21 @@ function php_ini_lines(string $path = ''): array {
     return is_file($path) ? (file($path, FILE_IGNORE_NEW_LINES) ?: []) : [];
 }
 
+/**
+ * Text of a fresh bin/php.ini: every directive the Configuration page manages, at the value it
+ * recommends (switches on, matching the php.ini the Windows bundle ships).
+ */
+function php_ini_defaults(): string {
+    $out = "; bin/php.ini created by Locadev (this install had none: static FrankenPHP).\n"
+        . "; start.sh exports PHPRC=bin, so the server and the bundled CLI read this file.\n"
+        . "; Extensions are compiled into the binary and cannot be toggled from here.\n\n";
+    foreach (config_directives() as $name => $d) {
+        $value = $d['recommended'] ?? ($d['type'] === 'switch' ? 'On' : (string) reset($d['options']));
+        $out .= $name . ' = ' . $value . "\n";
+    }
+    return $out;
+}
+
 function config_ini_values(string $iniPath): array {
     $raw = implode("\n", php_ini_lines($iniPath));
     $values = [];
@@ -599,16 +647,21 @@ function partial_configuration(): string {
     $hasIni = is_file($iniPath);
     $values = $hasIni ? config_ini_values($iniPath) : [];
 
+    $spin = spin_attrs();
     $restartBtn = '<button type="button" class="btn btn-secondary" hx-post="' . e(hx_url('restart_server')) . '" hx-swap="none"'
-        . ' hx-on::before:request="this.disabled = true" hx-on::after:request="this.disabled = false"'
+        . ' hx-on::before:request="this.disabled = true" hx-on::after:request="this.disabled = false"' . $spin
         . ' title="Restart FrankenPHP to apply configuration">' . ico('refresh', 14) . '<span>Restart Server</span></button>';
 
-    // No php.ini (Linux/macOS: static FrankenPHP). An inert form plus a promise to write a file
-    // that is not there reads as a broken page, and save_configuration would answer 422 anyway.
+    // No php.ini (Linux/macOS: static FrankenPHP). The file is not required - PHPRC makes PHP read
+    // bin/php.ini when it exists (start.sh exports it), so creating one here is what turns this
+    // page from an explanation into a working editor.
     if (!$hasIni) {
+        $createBtn = '<button type="button" class="btn btn-primary" hx-post="' . e(hx_url('create_php_ini')) . '"'
+            . ' hx-target="#view" hx-swap="innerHTML" hx-disable="this"' . $spin
+            . ' title="Write a php.ini with the recommended values">' . ico('add', 14) . '<span>Create php.ini</span></button>';
         return '<div class="unified-toolbar"><div class="toolbar-left">'
-            . '<span class="cell-muted" style="font-size:0.8125rem">This install has no bin/php.ini — FrankenPHP is a static build here, so PHP settings come from the Caddyfile and the PHP build itself. Nothing to edit on this page.</span>'
-            . '</div><div class="toolbar-right">' . $restartBtn . '</div></div>';
+            . '<span class="cell-muted" style="font-size:0.8125rem">No bin/php.ini on this install (static FrankenPHP). Create one to edit the directives below — it is loaded through PHPRC and applied after a restart.</span>'
+            . '</div><div class="toolbar-right">' . $createBtn . $restartBtn . '</div></div>';
     }
 
     $html = '<div class="unified-toolbar"><div class="toolbar-left">'
@@ -767,7 +820,11 @@ function partial_extensions(array $params = []): string {
     $loadedCount = count($data['loaded']);
     $dllCount = count($data['dlls']);
 
-    $filter = ($params['filter'] ?? '') === 'builtin' ? 'builtin' : 'available';
+    // With nothing toggleable (no php.ini, no DLLs) the Available tab is empty by definition, so
+    // open the tab that actually has content; an explicit ?filter= still wins.
+    $default = ($data['exts'] === [] && $data['dlls'] === []) ? 'builtin' : 'available';
+    $wanted = (string) ($params['filter'] ?? '');
+    $filter = in_array($wanted, ['builtin', 'available'], true) ? $wanted : $default;
     $page = max(1, (int) ($params['page'] ?? 1));
     $q = strtolower(trim($params['q'] ?? ''));
 
@@ -837,7 +894,9 @@ function partial_extensions(array $params = []): string {
         // a different state from "your filter matched nothing" - say which one it is.
         $html .= '<tr><td colspan="5" class="empty-cell">'
             . ($data['exts'] === [] && $data['dlls'] === []
-                ? 'Nothing to toggle here: this install has no bin/php.ini and no bin/ext/*.dll — FrankenPHP is a static build, so the PHP extensions are compiled in. The Built-in tab lists them.'
+                ? 'Nothing to toggle: this install runs a static FrankenPHP with '
+                    . count($data['builtins']) . ' extensions compiled in — see the Built-in tab. '
+                    . 'Toggling needs a PHP that loads extensions from disk (the Windows install ships one).'
                 : 'No extensions found.')
             . '</td></tr>';
     }
