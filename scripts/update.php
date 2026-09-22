@@ -28,6 +28,15 @@ function locadev_version(string $root): string {
     return preg_match("/define\('LOCODEV_VERSION',\s*'([^']+)'/", (string) file_get_contents($api), $m) ? $m[1] : '';
 }
 
+/**
+ * Version without the release tag's leading 'v': "v1.4.0" and "1.4.0" are the same version.
+ * Comparing the raw tag against the LOCODEV_VERSION constant (which has no 'v') never matched,
+ * so an install on the newest release was reported as "ahead of the published release".
+ */
+function locadev_version_clean(string $version): string {
+    return ltrim(trim($version), 'vV');
+}
+
 /** Newest release tag, by following GitHub's /releases/latest redirect - no API token needed. */
 function locadev_latest_tag(): string {
     $ctx = stream_context_create(['http' => ['method' => 'HEAD', 'follow_location' => 0, 'timeout' => 15]]);
@@ -159,7 +168,8 @@ function locadev_check_json(string $root): array {
     return [
         'installed' => $installed,
         'latest' => $latest,
-        'update_available' => $latest !== '' && $installed !== '' && version_compare($latest, $installed, '>'),
+        'update_available' => $latest !== '' && $installed !== ''
+            && version_compare(locadev_version_clean($latest), locadev_version_clean($installed), '>'),
     ];
 }
 
@@ -258,7 +268,7 @@ function locadev_update_main(array $argv): int {
     exec('rm -rf ' . escapeshellarg($tmp) . ' 2>/dev/null');
 
     $now = locadev_version($root);
-    if ($now !== trim($target, 'v')) {
+    if ($now !== locadev_version_clean($target)) {
         echo '[update] WARNING: version reads ' . ($now !== '' ? $now : 'unreadable') . ' after copying ' . $target . '. Update may be partial.' . "\n";
         return 1;
     }

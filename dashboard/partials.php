@@ -155,6 +155,9 @@ function update_status_text(): array {
 
     $installed = locadev_version($baseDir);
     $latest = locadev_latest_tag();
+    // Tag vs constant: "v1.4.0" is the same version as "1.4.0" (see locadev_version_clean()).
+    $latestV = locadev_version_clean($latest);
+    $installedV = locadev_version_clean($installed);
 
     if ($latest === '') {
         return ['note' => 'Could not reach GitHub — nothing was changed.', 'toast' => 'GitHub unreachable', 'error' => true, 'available' => false];
@@ -162,7 +165,7 @@ function update_status_text(): array {
     if ($installed === '') {
         return ['note' => 'Installed version unreadable — cannot tell if an update is needed.', 'toast' => 'Version unreadable', 'error' => true, 'available' => false];
     }
-    if (version_compare($latest, $installed, '>')) {
+    if (version_compare($latestV, $installedV, '>')) {
         return [
             'note' => 'Locadev ' . $latest . ' is available — you have ' . $installed . '.',
             'toast' => $latest . ' available — you have ' . $installed,
@@ -170,7 +173,7 @@ function update_status_text(): array {
             'available' => true,
         ];
     }
-    if ($latest === $installed) {
+    if ($latestV === $installedV) {
         return ['note' => 'You are on the newest release.', 'toast' => 'Up to date — ' . $installed, 'error' => false, 'available' => false];
     }
     return [
@@ -184,7 +187,10 @@ function update_status_text(): array {
 /** Version check + Update button + log of the last run. */
 function partial_update(): string {
     $status = update_status_text();
-    $note = $status['note'];
+    // The toast already reports the outcome. Keep a line in the panel only when there is
+    // something to act on (or an error worth keeping on screen), so the same sentence is not
+    // said twice in two places.
+    $note = ($status['available'] || $status['error']) ? $status['note'] : '';
     $button = '';
 
     if ($status['available']) {
@@ -199,6 +205,10 @@ function partial_update(): string {
         $button .= '<button type="button" class="btn btn-secondary btn-sm"'
             . ' hx-post="api.php?action=restart_server" hx-swap="none" hx-disable="this"' . spin_attrs()
             . ' title="Serve the updated files">' . ico('refresh', 14) . '<span>Restart server</span></button>';
+    }
+
+    if ($note === '' && $button === '' && $text === '') {
+        return ''; // up to date: the toast said it, nothing here needs an action
     }
 
     $html = '<div class="unified-toolbar"><div class="toolbar-left">'
@@ -530,7 +540,7 @@ function partial_system_info(): string {
         . '<span class="cell-muted" style="font-size:0.8125rem">What Locadev runs, and which build of it — versions come from the binaries themselves.</span>'
         . '</div><div class="toolbar-right">'
         . '<button type="button" class="btn btn-secondary btn-sm"'
-        . ' hx-get="api.php?action=update" hx-target="#update-panel" hx-swap="innerHTML"'
+        . ' hx-get="api.php?action=update" hx-target="#update-panel" hx-swap="innerHTML"' . spin_attrs()
         . ' title="Compare with the newest GitHub release">'
         . ico('refresh', 14) . '<span>Check for updates</span></button>'
         . '<button type="button" class="btn btn-secondary btn-sm" data-copy="' . e($summary) . '"'
@@ -880,7 +890,7 @@ function partial_extensions(array $params = []): string {
         . '<div class="toolbar-right">'
         . '<button type="button" class="btn btn-secondary" id="restart-btn" title="Restart FrankenPHP — apply extension changes"'
         . ' hx-post="' . e(hx_url('restart_server')) . '" hx-swap="none"'
-        . ' hx-on::before:request="this.disabled = true"'
+        . ' hx-on::before:request="this.disabled = true"' . spin_attrs()
         . ' hx-on::after:request="if (ctx?.response?.status < 400) { this.querySelector(\'span\').textContent = \'Restarting...\'; setTimeout(() => location.reload(), 5000); } else { this.disabled = false; }">'
         . ico('refresh', 14) . '<span>Restart Server</span></button>'
         . '</div></div>';

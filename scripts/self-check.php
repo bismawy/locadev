@@ -222,6 +222,17 @@ check('php_ini_defaults() round-trips through config_ini_values()', (function ()
         && preg_match('/^[0-9]+M$/', (string) $values['memory_limit']) === 1;
 })());
 
+echo "Versions\n";
+// The dashboard compares the release tag ("v1.4.0") with the LOCODEV_VERSION constant ("1.4.0").
+// Comparing them raw reported an install on the newest release as "ahead of the published release".
+check('locadev_version_clean() folds a tag into the version it names', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+    return locadev_version_clean('v1.4.0') === '1.4.0'
+        && locadev_version_clean(' 1.4.0 ') === '1.4.0'
+        && version_compare(locadev_version_clean('v1.5.0'), locadev_version_clean('1.4.0'), '>') === true
+        && version_compare(locadev_version_clean('v1.4.0'), locadev_version_clean('1.4.0'), '>') === false;
+})());
+
 echo "Update (thin layer)\n";
 // Salinan update adalah satu-satunya jalur di Locadev yang bisa menghapus berkas pengguna:
 // sites/ dan config/sites.json adalah symlink ke folder bersama Windows pada setup dual-boot
