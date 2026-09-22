@@ -13,7 +13,7 @@
 $root = dirname(__DIR__);
 chdir($root);
 
-// api.php menjawab request sintetis di bawah dan menyediakan helper tunnel.
+// api.php answers the synthetic request below and provides tunnel helpers.
 ob_start();
 $_GET['action'] = 'status';
 require $root . '/dashboard/api.php';
@@ -21,7 +21,7 @@ ob_end_clean();
 
 $stopped = 0;
 foreach (array_keys(read_tunnels()) as $id) {
-    stop_site_tunnel((string) $id); // guard citra proses: PID non-cloudflared tidak dibunuh
+    stop_site_tunnel((string) $id); // process image guard: non-cloudflared PIDs are not killed
     $stopped++;
 }
 

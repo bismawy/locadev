@@ -124,7 +124,7 @@ check('tunnel state round-trips through data/tunnels.json', (function (): bool {
     $ok = (read_tunnels()['_selfcheck']['url'] ?? '') === 'https://x.trycloudflare.com';
     write_tunnels($before);
     if ($before === [] && is_file(tunnels_state_file())) {
-        @unlink(tunnels_state_file()); // jangan tinggalkan state kosong dari uji
+        @unlink(tunnels_state_file()); // do not leave empty state behind after testing
     }
     return $ok;
 })());
@@ -144,7 +144,7 @@ check('CMS sites get the tunnel-URL mu-plugin, non-CMS sites are left alone', (f
     ensure_tunnel_url_plugin(['root' => $dir]);
     $file = $dir . '/wp-content/mu-plugins/locadev-tunnel-url.php';
     $code = (string) @file_get_contents($file);
-    // Host publik hanya bisa dibaca dari header ini; HTTP_HOST tetap <nama>.localhost di origin.
+    // Public host can only be read from this header; HTTP_HOST remains <name>.localhost at origin.
     $ok = str_contains($code, 'HTTP_X_FORWARDED_HOST') && str_contains($code, "add_filter('option_home'");
     $plain = $dir . '/plain';
     @mkdir($plain, 0777, true);
@@ -194,11 +194,11 @@ check('db-upgrade.php records the MariaDB version (and restores the marker)', (f
 })());
 
 echo "Runtime versions\n";
-// Versi diurai dari output biner dengan regex: kalau format upstream berubah, tabel
-// System Info diam-diam menampilkan versi kosong — cek ini yang menangkapnya.
+// Versions parsed from binary output using regex: if upstream format changes,
+// System Info silently displays empty versions — this check catches that.
 check('runtime_versions() reads FrankenPHP, PHP and Caddy versions from the binary', (function (): bool {
     if (!is_file(frankenphp_bin())) {
-        return true; // instalasi tanpa biner: tidak ada yang bisa diuji
+        return true; // install without binary: nothing to test
     }
     $v = runtime_versions();
     $semver = static fn(string $s): bool => (bool) preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/', $s);
@@ -234,9 +234,9 @@ check('locadev_version_clean() folds a tag into the version it names', (function
 })());
 
 echo "Update (thin layer)\n";
-// Salinan update adalah satu-satunya jalur di Locadev yang bisa menghapus berkas pengguna:
-// sites/ dan config/sites.json adalah symlink ke folder bersama Windows pada setup dual-boot
-// (bug install.sh: --exclude="sites/*" tidak cocok dengan nama entri arsip locadev-main/sites/...).
+// An update copy is the only path in Locadev that could delete user files:
+// sites/ and config/sites.json are symlinks to Windows shared folder in dual-boot setups
+// (install.sh bug: --exclude="sites/*" did not match archive entry name locadev-main/sites/...).
 check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side user data', (function () use ($root): bool {
     require_once $root . '/scripts/update.php';
 
@@ -246,7 +246,7 @@ check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side 
     $src = $tmp . '/src';
     $mk = static fn(string $p, string $c): bool => @mkdir($p, 0777, true) && @file_put_contents($p . '/' . $c, '') !== false;
 
-    // Destinasi: symlink sites/ + config/sites + config/sites.json ke folder bersama.
+    // Destination: symlink sites/ + config/sites + config/sites.json to shared directory.
     $mk($shared, 'registry.json');
     file_put_contents($shared . '/registry.json', 'keep');
     $mk($dest . '/data/mariadb', 'keep.txt');
@@ -259,10 +259,10 @@ check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side 
     if (!@symlink($shared, $dest . '/sites')
         || !@symlink($shared, $dest . '/config/sites')
         || !@symlink($shared . '/registry.json', $dest . '/config/sites.json')) {
-        return true; // symlink butuh izin di Windows: tidak ada yang bisa diuji di sini
+        return true; // symlinks require permissions on Windows: nothing to test here
     }
 
-    // Bundle: berkas tipis baru + entri sites/ dan data/ yang harus diabaikan.
+    // Bundle: fresh thin files + sites/ and data/ entries that must be ignored.
     $mk($src . '/dashboard', 'api.php');
     file_put_contents($src . '/dashboard/api.php', 'new');
     $mk($src . '/config/sites', 'real.txt');
@@ -280,15 +280,15 @@ check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side 
 
     locadev_copy_tree($src, $dest, locadev_update_skips());
 
-    $ok = file_get_contents($dest . '/dashboard/api.php') === 'new'      // berkas tipis ter-update
-        && is_link($dest . '/sites')                                     // symlink tetap symlink
+    $ok = file_get_contents($dest . '/dashboard/api.php') === 'new'      // thin files updated
+        && is_link($dest . '/sites')                                     // symlink stays symlink
         && is_link($dest . '/config/sites')
         && is_link($dest . '/config/sites.json')
-        && file_get_contents($shared . '/registry.json') === 'keep'      // registry tidak tersentuh
-        && file_get_contents($dest . '/data/mariadb/keep.txt') === 'keep' // data tidak tersentuh
-        && !file_exists($shared . '/real.txt')                           // isi bundle tidak menembus symlink
+        && file_get_contents($shared . '/registry.json') === 'keep'      // registry untouched
+        && file_get_contents($dest . '/data/mariadb/keep.txt') === 'keep' // data untouched
+        && !file_exists($shared . '/real.txt')                           // bundle contents do not traverse symlink
         && !file_exists($dest . '/data/ignore.txt')
-        && (fileperms($dest . '/bin/locadev') & 0111) !== 0             // bit executable dipaksa
+        && (fileperms($dest . '/bin/locadev') & 0111) !== 0             // executable bit enforced
         && (fileperms($dest . '/scripts/x.php') & 0111) !== 0
         && (fileperms($dest . '/start.sh') & 0111) !== 0;
 
