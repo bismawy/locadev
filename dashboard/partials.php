@@ -450,7 +450,7 @@ function partial_system_info(): string {
         ['Operating System', PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r')],
         ['Machine', php_uname('m')],
         ['PHP Version', PHP_VERSION . ' (' . php_sapi_name() . ')'],
-        ['PHP Configuration', php_ini_loaded_file() ?: 'php.ini not found'],
+        ['PHP Configuration', php_ini_loaded_file() ?: 'no php.ini (static build — settings come from the Caddyfile)'],
         ['PHP Extensions', count(get_loaded_extensions()) . ' loaded'],
         ['Memory Limit', ini_get('memory_limit')],
         ['Web Server', $webServer],
@@ -565,14 +565,22 @@ function config_directives(): array {
     ];
 }
 
+/**
+ * Lines of the bundled php.ini, and [] when there is none.
+ *
+ * Linux/macOS installs carry no php.ini at all - FrankenPHP is a static build and settings live
+ * in the Caddyfile - so "missing" is a normal state, not an error. Two readers used to call
+ * file()/file_get_contents() blind, which put a PHP Warning in front of the JSON reply and broke
+ * every programmatic client on those platforms. Guard here, once, for every reader.
+ */
+function php_ini_lines(string $path = ''): array {
+    global $baseDir;
+    $path = $path !== '' ? $path : $baseDir . '/bin/php.ini';
+    return is_file($path) ? (file($path, FILE_IGNORE_NEW_LINES) ?: []) : [];
+}
+
 function config_ini_values(string $iniPath): array {
-    // Linux/macOS installs carry no php.ini (FrankenPHP is a static build; settings live in
-    // the Caddyfile), so a missing file is normal. Reading it blind put a PHP Warning in front
-    // of the JSON reply, which broke every programmatic client on those platforms.
-    if (!is_file($iniPath)) {
-        return [];
-    }
-    $raw = (string) file_get_contents($iniPath);
+    $raw = implode("\n", php_ini_lines($iniPath));
     $values = [];
     foreach (array_keys(config_directives()) as $name) {
         // Last uncommented occurrence wins (Locadev tuning block overrides defaults above).
@@ -588,7 +596,20 @@ function partial_configuration(): string {
 
     $iniPath = $baseDir . '/bin/php.ini';
     $directives = config_directives();
-    $values = file_exists($iniPath) ? config_ini_values($iniPath) : [];
+    $hasIni = is_file($iniPath);
+    $values = $hasIni ? config_ini_values($iniPath) : [];
+
+    $restartBtn = '<button type="button" class="btn btn-secondary" hx-post="' . e(hx_url('restart_server')) . '" hx-swap="none"'
+        . ' hx-on::before:request="this.disabled = true" hx-on::after:request="this.disabled = false"'
+        . ' title="Restart FrankenPHP to apply configuration">' . ico('refresh', 14) . '<span>Restart Server</span></button>';
+
+    // No php.ini (Linux/macOS: static FrankenPHP). An inert form plus a promise to write a file
+    // that is not there reads as a broken page, and save_configuration would answer 422 anyway.
+    if (!$hasIni) {
+        return '<div class="unified-toolbar"><div class="toolbar-left">'
+            . '<span class="cell-muted" style="font-size:0.8125rem">This install has no bin/php.ini — FrankenPHP is a static build here, so PHP settings come from the Caddyfile and the PHP build itself. Nothing to edit on this page.</span>'
+            . '</div><div class="toolbar-right">' . $restartBtn . '</div></div>';
+    }
 
     $html = '<div class="unified-toolbar"><div class="toolbar-left">'
         . '<span class="cell-muted" style="font-size:0.8125rem">Changes are written to bin/php.ini and applied after a server restart.</span>'
@@ -596,9 +617,7 @@ function partial_configuration(): string {
         . '<button type="button" class="btn btn-primary" id="save-config-btn" disabled hx-post="' . e(hx_url('save_configuration')) . '" hx-include="#config-form" hx-swap="none"'
         . ' hx-on::after:request="resetConfigSnapshot()">'
         . ico('check', 14) . '<span>Save Configuration</span></button>'
-        . '<button type="button" class="btn btn-secondary" hx-post="' . e(hx_url('restart_server')) . '" hx-swap="none"'
-        . ' hx-on::before:request="this.disabled = true" hx-on::after:request="this.disabled = false"'
-        . ' title="Restart FrankenPHP to apply configuration">' . ico('refresh', 14) . '<span>Restart Server</span></button>'
+        . $restartBtn
         . '</div></div>';
 
     $html .= '<div class="table-container"><form id="config-form" onsubmit="return false">'
@@ -708,7 +727,9 @@ function ext_description(string $name): string {
 function get_extensions_data(): array {
     global $baseDir;
     $iniPath = $baseDir . '/bin/php.ini';
-    $lines = file($iniPath, FILE_IGNORE_NEW_LINES) ?: [];
+    // No php.ini (Linux/macOS): no toggleable extensions, only the compiled-in ones - which is
+    // exactly what the Extensions page should show there.
+    $lines = php_ini_lines();
     $loaded = array_map('strtolower', get_loaded_extensions());
 
     $dlls = [];
@@ -812,7 +833,13 @@ function partial_extensions(array $params = []): string {
         . '<thead><tr><th>Extension</th><th>Description</th><th>Module File</th><th>Status</th><th>Enabled</th></tr></thead><tbody>';
 
     if ($pageRows === []) {
-        $html .= '<tr><td colspan="5" class="empty-cell">No extensions found.</td></tr>';
+        // Empty because there is nothing to toggle (Linux/macOS: no php.ini, no bin/ext/*.dll) is
+        // a different state from "your filter matched nothing" - say which one it is.
+        $html .= '<tr><td colspan="5" class="empty-cell">'
+            . ($data['exts'] === [] && $data['dlls'] === []
+                ? 'Nothing to toggle here: this install has no bin/php.ini and no bin/ext/*.dll — FrankenPHP is a static build, so the PHP extensions are compiled in. The Built-in tab lists them.'
+                : 'No extensions found.')
+            . '</td></tr>';
     }
 
     foreach ($pageRows as $ext) {

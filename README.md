@@ -59,6 +59,9 @@ curl -fsSL https://raw.githubusercontent.com/bismawy/locadev/main/install.sh | b
 - Installs MariaDB automatically via your package manager (`pacman`, `apt`, `dnf`, `zypper`) if missing.
 - Grants FrankenPHP permission to bind `:80`/`:443` without root (`setcap`). If that step is skipped, run:
   `sudo setcap cap_net_bind_service=+ep ~/locadev/bin/frankenphp`
+- There is no `bin/php.ini` here (static FrankenPHP), so the dashboard's PHP Configuration and
+  Extensions pages have nothing to edit — settings live in the `Caddyfile` and the PHP build
+  itself. Those two pages only apply to the Windows install, which ships a bundled PHP.
 
 </details>
 
