@@ -69,8 +69,10 @@ Get-RemoteFile $BinZipUrl "$Tmp\bin.zip"
 
 # ---- [4/5] Lay down app files; PRESERVE user data ----
 Write-Host "[4/5] Installing..." -ForegroundColor Yellow
-# app dirs from the repo (safe to overwrite on every upgrade)
-Get-ChildItem "$RepoSrc" -Directory | Where-Object { $_.Name -notin @("data","sites") } |
+# app dirs from the repo (safe to overwrite on every upgrade). config/ is excluded here and
+# laid down per file below: copying the directory -Force wrote config/my.cnf on EVERY run,
+# so the guard underneath never fired and user tuning was lost on every re-install.
+Get-ChildItem "$RepoSrc" -Directory | Where-Object { $_.Name -notin @("data","sites","config") } |
     ForEach-Object { Copy-Item $_.FullName "$InstallDir\" -Recurse -Force }
 Get-ChildItem "$RepoSrc" -File | Copy-Item -Destination "$InstallDir\" -Force
 # user data dirs exist but are NOT overwritten

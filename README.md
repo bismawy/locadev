@@ -111,8 +111,37 @@ Then, in the dashboard: **Create Site** → pick a preset (ClassicPress / WordPr
 | `locadev status` | Check service status &amp; ports |
 | `locadev db-export [file]` | Dump all user databases to a `.sql` file (default `data/db-sync.sql`) |
 | `locadev db-import [file]` | Import a `.sql` dump, replacing the databases it contains |
+| `locadev version` | Print the installed version (also `-v` / `--version`; every banner shows it too) |
+| `locadev update` | Update Locadev in place (asks `y/N`; `--check` prints JSON, `--tag=vX.Y.Z` pins a version) |
 | `locadev menu` | Interactive control menu |
 | `locadev open` | Open the web dashboard in your browser |
+
+## Updating
+
+Terminal:
+
+```bash
+locadev update        # asks, then updates scripts, dashboard, CLI and config templates
+locadev restart       # serve the new version
+```
+
+Dashboard: **System Info → Check for updates → Update now.** Progress streams into the panel
+(polled every second) and ends with a **Restart server** button.
+
+What an update does and does not touch:
+
+| | |
+| :--- | :--- |
+| Updated | `dashboard/`, `scripts/`, `bin/locadev`, `Caddyfile`, `start.sh`/`stop.sh`, `README.md` |
+| Never touched | `data/`, `sites/`, `config/sites/`, `config/sites.json`, `config/my.cnf`, `.git` |
+| Never touched, on purpose | The binaries (`bin/frankenphp`, `bin/php.exe`, MariaDB) — Windows locks a running `.exe`, and on Linux replacing `bin/frankenphp` drops the `setcap` that lets it bind `:443`. Re-run the installer when you want newer binaries. |
+
+The skip list is explicit code, not a `tar --exclude` pattern: the release archive names its entries
+`locadev-main/sites/...`, so a pattern like `sites/*` never matched anything and `tar` was free to
+replace a symlinked `sites/` (the dual-boot setup below) with a real directory.
+
+If an update ever goes wrong, the previous version is one command away — release bundles are
+immutable, so `locadev update --tag=v1.3.0` puts the old files back. Your data is never part of it.
 
 ## How It Works
 

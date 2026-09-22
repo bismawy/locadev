@@ -87,6 +87,97 @@ function render_pagination(int $page, int $totalPages, string $action, array $ex
         . '</div>';
 }
 
+/* ================= Locadev update ================= */
+
+/**
+ * Tail of data/update.log and whether the run is over. A run with no new output for 30s
+ * counts as over too - the poller must stop on its own when the updater dies mid-download.
+ *
+ * @return array{0:string,1:bool}
+ */
+function update_log_state(): array {
+    global $baseDir;
+    $log = $baseDir . '/data/update.log';
+    if (!is_file($log)) {
+        return ['', true];
+    }
+    $text = (string) file_get_contents($log);
+    $done = (bool) preg_match('/\[update\] (Done|Cancelled|Already on|Cannot|Download failed|Extraction failed|WARNING|Unexpected|No bundled PHP)/', $text)
+        || time() - filemtime($log) > 150; // > the updater's 120s download timeout: a slow link is not "finished"
+    return [$text, $done];
+}
+
+/** The log box alone. */
+function partial_update_log(): string {
+    [$text, $done] = update_log_state();
+    return '<pre id="update-log"'
+        . ' style="max-height:16rem;overflow:auto;margin:0.75rem 1rem;padding:0.75rem;font-size:0.75rem;'
+        . 'line-height:1.5;white-space:pre-wrap;border-radius:0.5rem;background:var(--surface-2, rgba(127,127,127,0.08))">'
+        . e($text) . '</pre>';
+}
+
+/**
+ * The invisible poller, out-of-band swapped into the System Info view. Same idea as the status
+ * poller in index.php, with hx-swap="none" on purpose: if an update replaces api.php with a
+ * version that has no update_log action yet, the reply is junk - and junk swapped into the DOM
+ * would be worse than the reply being ignored. The poller survives, re-asks, and self-heals.
+ * Finish = the reply carries a poller without hx-trigger, so polling stops by itself.
+ */
+function partial_update_poller(bool $active): string {
+    return '<div id="update-poller" hidden hx-swap-oob="true" hx-get="api.php?action=update_log" hx-swap="none"'
+        . ($active ? ' hx-trigger="every 1s"' : '') . '></div>';
+}
+
+/** Panel + poller. $oobPanel = false when the reply is already targeted at #update-panel. */
+function partial_update_response(bool $oobPanel): string {
+    [$text, $done] = update_log_state();
+    $panel = partial_update();
+    return ($oobPanel ? '<div id="update-panel" hx-swap-oob="innerHTML">' . $panel . '</div>' : $panel)
+        . partial_update_poller(!$done);
+}
+
+/** Version check + Update button + log of the last run. */
+function partial_update(): string {
+    global $baseDir;
+
+    $installed = locadev_version($baseDir);
+    $latest = locadev_latest_tag();
+    $button = '';
+
+    if ($latest === '') {
+        $note = 'Could not reach GitHub to read the newest release. Nothing was changed.';
+    } elseif ($installed === '') {
+        $note = 'Installed version unreadable - cannot tell if an update is needed.';
+    } elseif (version_compare($latest, $installed, '>')) {
+        $note = 'Locadev ' . $latest . ' is available. You are on ' . $installed . '; your sites, data and registry stay as they are.';
+        $button = '<button type="button" class="btn btn-primary btn-sm"'
+            . ' hx-post="api.php?action=update_run" hx-target="#update-panel" hx-swap="innerHTML" hx-disable="this"'
+            . ' title="Update scripts, dashboard and CLI in place">'
+            . ico('refresh', 14) . '<span>Update now</span></button>';
+    } elseif ($latest === $installed) {
+        $note = 'You are on the newest release (' . $installed . ').';
+    } else {
+        // Local build ahead of the newest published release: honest, not "you are newest".
+        $note = 'You are on ' . $installed . ', ahead of the newest published release (' . $latest . ').';
+    }
+
+    [$text, $done] = update_log_state();
+    if ($text !== '' && $done && str_contains($text, '[update] Done')) {
+        $button .= '<button type="button" class="btn btn-secondary btn-sm"'
+            . ' hx-post="api.php?action=restart_server" hx-swap="none" hx-disable="this"'
+            . ' title="Serve the updated files">' . ico('refresh', 14) . '<span>Restart server</span></button>';
+    }
+
+    $html = '<div class="unified-toolbar"><div class="toolbar-left">'
+        . '<span class="cell-muted" style="font-size:0.8125rem">' . e($note) . '</span>'
+        . '</div><div class="toolbar-right">' . $button . '</div></div>';
+
+    if ($text !== '') {
+        $html .= partial_update_log();
+    }
+    return $html;
+}
+
 /* ================= Sites view ================= */
 
 function partial_sites(array $params): string {
@@ -355,6 +446,7 @@ function partial_system_info(): string {
         : 'cloudflared not downloaded yet (bin/cloudflared)';
 
     $rows = [
+        ['Locadev', LOCODEV_VERSION . ' (use "Check for updates" above)'],
         ['Operating System', PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r')],
         ['Machine', php_uname('m')],
         ['PHP Version', PHP_VERSION . ' (' . php_sapi_name() . ')'],
@@ -404,10 +496,16 @@ function partial_system_info(): string {
     $html = '<div class="unified-toolbar"><div class="toolbar-left">'
         . '<span class="cell-muted" style="font-size:0.8125rem">What Locadev runs, and which build of it — versions come from the binaries themselves.</span>'
         . '</div><div class="toolbar-right">'
+        . '<button type="button" class="btn btn-secondary btn-sm"'
+        . ' hx-get="api.php?action=update" hx-target="#update-panel" hx-swap="innerHTML"'
+        . ' title="Compare with the newest GitHub release">'
+        . ico('refresh', 14) . '<span>Check for updates</span></button>'
         . '<button type="button" class="btn btn-secondary btn-sm" data-copy="' . e($summary) . '"'
         . ' title="Copy a plain-text version summary for bug reports">'
         . ico('content_copy', 14) . '<span>Copy version summary</span></button>'
         . '</div></div>';
+
+    $html .= '<div id="update-panel"></div>';
 
     $html .= '<div class="table-container"><table>'
         . '<colgroup><col style="width:30%"><col style="width:70%"></colgroup>'
@@ -468,7 +566,13 @@ function config_directives(): array {
 }
 
 function config_ini_values(string $iniPath): array {
-    $raw = file_get_contents($iniPath);
+    // Linux/macOS installs carry no php.ini (FrankenPHP is a static build; settings live in
+    // the Caddyfile), so a missing file is normal. Reading it blind put a PHP Warning in front
+    // of the JSON reply, which broke every programmatic client on those platforms.
+    if (!is_file($iniPath)) {
+        return [];
+    }
+    $raw = (string) file_get_contents($iniPath);
     $values = [];
     foreach (array_keys(config_directives()) as $name) {
         // Last uncommented occurrence wins (Locadev tuning block overrides defaults above).

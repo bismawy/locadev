@@ -61,8 +61,13 @@ case "$REPO_URL" in
     *) curl -fsSL "$REPO_URL" -o "$TMP/repo.tgz" ;;
 esac
 mkdir -p "$INSTALL_DIR"
+# Excludes are matched against the ARCHIVE's member names (locadev-main/sites/...), so a
+# pattern written as "sites/*" matches nothing at all: tar would then be free to replace a
+# symlinked sites/ (user data shared with another OS) with a real, empty directory.
 tar -xzf "$TMP/repo.tgz" -C "$INSTALL_DIR" --strip-components=1 \
-    --exclude="data" --exclude="sites/*"
+    --exclude='*/data' --exclude='*/data/*' \
+    --exclude='*/sites' --exclude='*/sites/*' \
+    --exclude='*/config/sites' --exclude='*/config/sites/*' --exclude='*/config/sites.json'
 
 # ---- [3/5] FrankenPHP binary ----
 echo "${C_Y}[3/5] Downloading FrankenPHP for $OS $ARCH...${C_0}"

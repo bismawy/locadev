@@ -1,3 +1,10 @@
+<?php
+// Saw the same constant api.php serves instead of a second copy of the number: a release
+// bumps one file, and this fallback cannot go stale between releases. The status poll keeps
+// #locadev-version refreshed out-of-band from LOCODEV_VERSION anyway.
+preg_match("/define\('LOCODEV_VERSION',\s*'([^']+)'/", (string) @file_get_contents(__DIR__ . '/api.php'), $m);
+$sidebarVersion = $m[1] ?? '';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -86,7 +93,7 @@
         </div>
       </div>
       <!-- fallback only: the status poll refreshes this from LOCODEV_VERSION -->
-      <div class="foot-versions">Locadev <span id="locadev-version">1.3.0</span></div>
+      <div class="foot-versions">Locadev <span id="locadev-version"><?= htmlspecialchars($sidebarVersion, ENT_QUOTES) ?></span></div>
     </div>
   </aside>
 

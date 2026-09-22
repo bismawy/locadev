@@ -8,7 +8,7 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.3.0');
+define('LOCODEV_VERSION', '1.4.0');
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
 const SYSTEM_DBS = ['information_schema', 'mysql', 'performance_schema', 'sys'];
@@ -204,7 +204,9 @@ function latest_classicpress_tag() {
                 $loc = $m[1];
             }
         }
-        if ($loc && preg_match('#/tag/([^/\?#]+)#', $loc, $m)) {
+        // Delimiter must not be '#' (nor appear escaped inside the class): PHP ends the
+        // pattern at the '#' in [^/?\#], so this silently returned the offline fallback.
+        if ($loc && preg_match('~/tag/([^/?#]+)~', $loc, $m)) {
             return $m[1];
         }
     }
@@ -438,7 +440,9 @@ function runtime_versions(): array {
         exec(escapeshellarg($fp) . ' version 2>&1', $out);
         $text = implode(' ', $out); // "FrankenPHP 1.12.7 PHP 8.5.10 Caddy v2.11.4 h1:..."
         $patterns = [
-            'frankenphp' => '/FrankenPHP\s+([0-9][0-9.]*)/i',
+            // v1.12.7, not 1.12.7: without the optional 'v' the version stayed empty and System
+            // Info fell back to the SAPI name. self-check's runtime_versions check caught this.
+            'frankenphp' => '/FrankenPHP\s+v?([0-9][0-9.]*)/i',
             'php' => '/PHP\s+([0-9][0-9.]*)/',
             'caddy' => '/Caddy\s+v?([0-9][0-9.]*)/i',
         ];
@@ -781,6 +785,8 @@ header('Content-Type: ' . ($isHx ? 'text/html' : 'application/json') . '; charse
 // Always loaded: the JSON path calls config_ini_values()/get_extensions_data() from here.
 require_once __DIR__ . '/partials.php';
 require_once __DIR__ . '/components.php';
+// Updater engine: the same file `locadev update` runs, so the two frontends cannot drift.
+require_once dirname(__DIR__) . '/scripts/update.php';
 
 // CSRF fence: there is no auth and the dashboard answers on a loopback port that any
 // page the user visits can POST to. Loopback is not a defense against a form POST, so
@@ -1362,6 +1368,71 @@ switch ($action) {
             exit;
         }
         echo json_encode(['success' => true]);
+        break;
+
+    case 'update':
+        if ($isHx) {
+            echo partial_update_response(false);
+            exit;
+        }
+        echo json_encode(locadev_check_json($baseDir));
+        break;
+
+    case 'update_run':
+        $log = $baseDir . '/data/update.log';
+        @mkdir(dirname($log), 0777, true);
+
+        // Two signals, because a run started from the terminal writes no log: the lock file
+        // (written by update.php itself) and an unfinished log (a dashboard run in flight).
+        if (locadev_update_running($baseDir) || !update_log_state()[1]) {
+            if ($isHx) {
+                hx_toast('An update is already running', true);
+                echo partial_update_response(false);
+                exit;
+            }
+            echo json_encode(['success' => false, 'error' => 'An update is already running']);
+            break;
+        }
+        // Seed the log now: the panel polls it, and an empty file would look finished.
+        @file_put_contents($log, "[update] Starting...\n");
+
+        // Detached on purpose: this request is served by the very process whose files are
+        // about to be replaced, so it has to answer before the copy starts.
+        //
+        // proc_open with an argument array and file descriptors - the same shape the tunnel
+        // feature uses, and for the same reason: the child inherits no stdout pipe, so this
+        // request returns immediately. `start /B` via popen hangs the caller on Windows until
+        // the child exits (see start_site_tunnel), which would leave the button spinning.
+        $script = $baseDir . '/scripts/update.php';
+        $cmd = PHP_OS_FAMILY === 'Windows'
+            ? [$baseDir . '/bin/php.exe', $script, '--yes']
+            : [$baseDir . '/bin/frankenphp', 'php-cli', $script, '--yes'];
+        $null = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+        $ini = $baseDir . '/bin/php.ini';
+        // Replaces the `set PHPRC=` the .cmd used to do; PATH must survive for `tar`.
+        $env = is_file($ini) ? array_merge(getenv(), ['PHPRC' => $baseDir . '/bin']) : null;
+
+        $proc = proc_open($cmd, [
+            0 => ['file', $null, 'r'],
+            1 => ['file', $log, 'w'],
+            2 => ['redirect', 1],
+        ], $pipes, $baseDir, $env, ['bypass_shell' => true]);
+
+        if (!is_resource($proc)) {
+            @file_put_contents($log, "[update] Could not start the updater process.\n");
+        }
+
+        if ($isHx) {
+            hx_toast('Update started - progress below');
+            echo partial_update_response(false);
+            exit;
+        }
+        echo json_encode(['success' => true, 'started' => true, 'log' => $log]);
+        break;
+
+    case 'update_log':
+        // Polled by the invisible poller: everything is an out-of-band swap.
+        echo partial_update_response(true);
         break;
 
     case 'configuration':
