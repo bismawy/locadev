@@ -216,6 +216,15 @@ function locadev_update_main(array $argv): int {
         }
     }
 
+    // Sweep leftovers from runs that were killed (SIGKILL skips every cleanup we install). Only
+    // before we create our own directory, and only stale ones: we hold the lock at this point, so
+    // nothing else can be mid-flight.
+    foreach (glob(sys_get_temp_dir() . '/locadev-update-*') ?: [] as $old) {
+        if (@filemtime($old) < time() - 3600) {
+            exec('rm -rf ' . escapeshellarg($old) . ' 2>/dev/null');
+        }
+    }
+
     $tmp = sys_get_temp_dir() . '/locadev-update-' . getmypid();
     exec('rm -rf ' . escapeshellarg($tmp) . ' 2>/dev/null');
     @mkdir($tmp, 0777, true);
