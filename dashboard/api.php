@@ -8,14 +8,18 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.4.1');
+define('LOCODEV_VERSION', '1.4.2');
 
 /**
  * AdminNeo is mirrored on Locadev's own releases: upstream ships no asset and no adminneo.php in
- * the repository. Bump both together with the file in dist/ when a newer AdminNeo is taken.
+ * the repository. ADMINNEO_RELEASE is the Locadev tag the file is attached to and is used in the
+ * download URL instead of /releases/latest, which GitHub's edge served as a STALE redirect to the
+ * previous release for PHP's stream client (verified: curl got v1.4.1, PHP got v1.4.0). Bump the
+ * three together with the file in dist/ when a newer AdminNeo is taken.
  */
 const ADMINNEO_VERSION = '5.7.1';
 const ADMINNEO_ASSET = 'adminneo-5.7.1.zip';
+const ADMINNEO_RELEASE = 'v1.4.2';
 const ADMINNEO_URL = 'https://adminneo.localhost';
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
@@ -566,7 +570,8 @@ function ensure_adminneo(): array {
     $dir = adminneo_dir();
     @mkdir($dir, 0777, true);
     $tmp = $dir . '/adminneo.zip.part';
-    $url = 'https://github.com/' . LOCADEV_REPO . '/releases/latest/download/' . ADMINNEO_ASSET;
+    // Explicit tag, never /releases/latest (see the note on ADMINNEO_RELEASE).
+    $url = 'https://github.com/' . LOCADEV_REPO . '/releases/download/' . ADMINNEO_RELEASE . '/' . ADMINNEO_ASSET;
 
     set_time_limit(0);
     $ctx = stream_context_create(['http' => ['timeout' => 300, 'user_agent' => 'locadev']]);
