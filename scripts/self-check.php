@@ -327,9 +327,15 @@ check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side 
         && file_get_contents($dest . '/data/mariadb/keep.txt') === 'keep' // data untouched
         && !file_exists($shared . '/real.txt')                           // bundle contents do not traverse symlink
         && !file_exists($dest . '/data/ignore.txt')
-        && (fileperms($dest . '/bin/locadev') & 0111) !== 0             // executable bit enforced
-        && (fileperms($dest . '/scripts/x.php') & 0111) !== 0
-        && (fileperms($dest . '/start.sh') & 0111) !== 0;
+        // NTFS has no executable flag and PHP reports 0666 either way, so asserting the bit on
+        // Windows fails for a reason that has nothing to do with the code - found by CI on
+        // windows-latest, where the symlinks below ARE creatable and this check therefore does not
+        // bail out early like it does on a normal Windows machine. Assert presence there instead.
+        && (PHP_OS_FAMILY === 'Windows'
+            ? (is_file($dest . '/bin/locadev') && is_file($dest . '/scripts/x.php') && is_file($dest . '/start.sh'))
+            : ((fileperms($dest . '/bin/locadev') & 0111) !== 0         // executable bit enforced
+                && (fileperms($dest . '/scripts/x.php') & 0111) !== 0
+                && (fileperms($dest . '/start.sh') & 0111) !== 0));
 
     exec(PHP_OS_FAMILY === 'Windows' ? 'rd /s /q ' . escapeshellarg($tmp) : 'rm -rf ' . escapeshellarg($tmp));
     return (bool) $ok;
