@@ -8,7 +8,7 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.4.4');
+define('LOCODEV_VERSION', '1.4.5');
 
 /**
  * AdminNeo is mirrored on Locadev's own releases: upstream ships no asset and no adminneo.php in
@@ -19,7 +19,7 @@ define('LOCODEV_VERSION', '1.4.4');
  */
 const ADMINNEO_VERSION = '5.8.0';
 const ADMINNEO_ASSET = 'adminneo-5.8.0.zip';
-const ADMINNEO_RELEASE = 'v1.4.4';
+const ADMINNEO_RELEASE = 'v1.4.5';
 const ADMINNEO_URL = 'https://adminneo.localhost';
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
