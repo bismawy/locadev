@@ -37,6 +37,36 @@ function locadev_version_clean(string $version): string {
     return ltrim(trim($version), 'vV');
 }
 
+/**
+ * True when the install is already at (or past) the release tag: nothing to download.
+ * The 'v' made '1.4.3' === 'v1.4.3' false, so every run fetched and extracted a release only to
+ * write back the files it already had. Also covers a checkout AHEAD of the release, which must
+ * not be silently downgraded. An unreadable installed version is never "up to date": re-copying
+ * is how a half-written install repairs itself.
+ */
+function locadev_up_to_date(string $installed, string $target): bool {
+    return $installed !== '' && $target !== ''
+        && !version_compare(locadev_version_clean($installed), locadev_version_clean($target), '<');
+}
+
+/**
+ * The release tag asked for on the command line, '' when none.
+ * Accepts --tag=vX.Y.Z AND the pair --tag vX.Y.Z: cmd.exe splits a batch argument on '=' (also ,
+ * and ;), so `locadev update --tag=v1.2.0` reaches PHP as two arguments on Windows and matching
+ * the '=' form alone silently ignored the pin.
+ */
+function locadev_arg_tag(array $argv): string {
+    $tag = '';
+    foreach ($argv as $i => $arg) {
+        if (str_starts_with($arg, '--tag=')) {
+            $tag = substr($arg, 6);
+        } elseif ($arg === '--tag' && isset($argv[$i + 1]) && !str_starts_with($argv[$i + 1], '-')) {
+            $tag = $argv[$i + 1];
+        }
+    }
+    return $tag;
+}
+
 /** Newest release tag, by following GitHub's /releases/latest redirect - no API token needed. */
 function locadev_latest_tag(): string {
     $ctx = stream_context_create(['http' => ['method' => 'HEAD', 'follow_location' => 0, 'timeout' => 15]]);
@@ -98,7 +128,11 @@ function locadev_update_skips(): array {
  * start.sh makes `locadev start` fail with "Permission denied". install.sh chmods the same set.
  */
 function locadev_exec_paths(): array {
-    return ['bin/locadev', 'start.sh', 'stop.sh'];
+    // bin/frankenphp belongs here too: the archive stores it 0664, and on Linux/macOS a
+    // non-executable frankenphp makes `locadev start` report "binary not found" - which reads as
+    // a missing file, not a missing bit. start.sh used to chmod it as a side effect; now that the
+    // launcher delegates, an update is the only thing that can restore the bit.
+    return ['bin/locadev', 'bin/frankenphp', 'start.sh', 'stop.sh'];
 }
 
 function locadev_copy_tree(string $src, string $dst, array $skip): array {
@@ -153,13 +187,39 @@ function locadev_download(string $url, string $dest): bool {
     return $body !== false && $body !== '' && @file_put_contents($dest, $body) !== false;
 }
 
+/**
+ * Delete a directory tree with no shell involved. The Unix 'rm -rf ... 2>/dev/null' this
+ * replaces was worse than useless on Windows: cmd.exe read the redirect as a path, printed
+ * "The system cannot find the path specified." and never deleted anything - the sweep of stale
+ * temp dirs silently did nothing and they piled up in %TEMP%.
+ */
+function locadev_rm_tree(string $dir): void {
+    if (!is_dir($dir)) {
+        return;
+    }
+    foreach (scandir($dir) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $dir . '/' . $name;
+        is_dir($path) && !is_link($path) ? locadev_rm_tree($path) : @unlink($path);
+    }
+    @rmdir($dir);
+}
+
 /** '' on success, a one-line reason otherwise. */
 function locadev_extract(string $tgz, string $dir): string {
     @mkdir($dir, 0777, true);
-    $out = [];
-    $code = 0;
-    exec('tar -xzf ' . escapeshellarg($tgz) . ' -C ' . escapeshellarg($dir) . ' 2>&1', $out, $code);
-    return $code === 0 ? '' : (implode(' ', array_slice($out, -2)) ?: 'tar exited with ' . $code);
+    // PharData, never the `tar` binary: GNU tar reads a Windows path as the remote form
+    // host:path, so extraction died with "Cannot connect to C: resolve failed" wherever Git
+    // for Windows' tar came first in PATH (bsdtar, which ships in System32 and does work,
+    // only wins by PATH order). No shell, no PATH, same result on every platform.
+    try {
+        (new PharData($tgz))->extractTo($dir, null, true);
+    } catch (Throwable $e) {
+        return $e->getMessage();
+    }
+    return '';
 }
 
 function locadev_check_json(string $root): array {
@@ -177,12 +237,7 @@ function locadev_update_main(array $argv): int {
     $root = dirname(__DIR__);
     $yes = in_array('--yes', $argv, true) || in_array('-y', $argv, true);
     $check = in_array('--check', $argv, true);
-    $tag = '';
-    foreach ($argv as $arg) {
-        if (str_starts_with($arg, '--tag=')) {
-            $tag = substr($arg, 6);
-        }
-    }
+    $tag = locadev_arg_tag($argv);
 
     if ($check) {
         echo json_encode(locadev_check_json($root)), "\n";
@@ -205,7 +260,9 @@ function locadev_update_main(array $argv): int {
     }
     $target = $tag !== '' ? $tag : $latest;
 
-    if ($installed === $target) {
+    // An explicit --tag still forces the copy: that is the documented escape hatch for pinning a
+    // version or re-syncing an install that a killed update left half-written.
+    if ($tag === '' && locadev_up_to_date($installed, $target)) {
         echo "[update] Already on {$target}. Nothing to do.\n";
         return 0;
     }
@@ -231,13 +288,16 @@ function locadev_update_main(array $argv): int {
     // nothing else can be mid-flight.
     foreach (glob(sys_get_temp_dir() . '/locadev-update-*') ?: [] as $old) {
         if (@filemtime($old) < time() - 3600) {
-            exec('rm -rf ' . escapeshellarg($old) . ' 2>/dev/null');
+            locadev_rm_tree($old);
         }
     }
 
     $tmp = sys_get_temp_dir() . '/locadev-update-' . getmypid();
-    exec('rm -rf ' . escapeshellarg($tmp) . ' 2>/dev/null');
+    locadev_rm_tree($tmp);
     @mkdir($tmp, 0777, true);
+    // Removed on the way out whatever happens. Every failure path below returns early, and the
+    // >1h sweep used to be the only cleanup - which never ran on Windows (see locadev_rm_tree).
+    register_shutdown_function(static fn() => locadev_rm_tree($tmp));
 
     $url = 'https://github.com/' . LOCADEV_REPO . '/releases/download/' . $target . '/locadev-repo.tar.gz';
     echo '[update] Downloading ' . $url . "\n";
@@ -264,8 +324,6 @@ function locadev_update_main(array $argv): int {
     echo '[update] ' . $stats['written'] . ' file(s) written';
     echo $stats['skipped'] ? ', skipped: ' . implode(', ', array_unique($stats['skipped'])) : '';
     echo "\n";
-
-    exec('rm -rf ' . escapeshellarg($tmp) . ' 2>/dev/null');
 
     $now = locadev_version($root);
     if ($now !== locadev_version_clean($target)) {

@@ -528,6 +528,7 @@ function partial_system_info(): string {
         $rows[] = ['MariaDB', 'not connected (127.0.0.1:3306)'];
         $rows[] = ['Databases', '-'];
     }
+    $rows[] = ['MariaDB Server', mariadb_server_binary()];
 
     $rows[] = ['Websites', count($sites) . ' registered'];
 

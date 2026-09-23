@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Locadev One-Line Installer for Linux and macOS.
-# Windows (PowerShell):    irm https://raw.githubusercontent.com/USERNAME/locadev/main/install.ps1 | iex
-# Linux / macOS:           curl -fsSL https://raw.githubusercontent.com/USERNAME/locadev/main/install.sh | bash
+# Windows (PowerShell):    irm https://raw.githubusercontent.com/bismawy/locadev/main/install.ps1 | iex
+# Linux / macOS:           curl -fsSL https://raw.githubusercontent.com/bismawy/locadev/main/install.sh | bash
 #
 # Logic: thin repo (scripts/dashboard/config) + platform-matching FrankenPHP binary.
 # MariaDB comes from the system package manager on Unix. User data (data/, sites/,

@@ -119,6 +119,19 @@ Then, in the dashboard: **Create Site** → pick a preset (ClassicPress / WordPr
 | `locadev menu` | Interactive control menu |
 | `locadev open` | Open the web dashboard in your browser |
 
+The same commands, verbs and menus exist on all three platforms - the CLI is `bin/locadev`
+(bash) and `bin/locadev.cmd` (Windows), and they are kept in step on purpose. Where the
+platforms genuinely differ:
+
+| | Windows | Linux / macOS |
+| :--- | :--- | :--- |
+| CLI entry point | `bin\locadev.cmd` (`locadev` on PATH) | `bin/locadev` (symlinked into `~/.local/bin`) |
+| Installer | `install.ps1` (x64 bundle: PHP, FrankenPHP, MariaDB) | `install.sh` (FrankenPHP upstream per-arch, MariaDB via your package manager) |
+| Shortcuts | `start.bat`, `stop.bat` - thin wrappers around the CLI | `start.sh`, `stop.sh` - same, thin wrappers |
+| MariaDB | bundled in `bin/mariadb`; moves only with Locadev | from the system package; follows OS updates (override: `LOCADEV_MARIADB_BIN`) |
+| Port 443 without root | not needed | Linux only: `install.sh` runs `setcap` on `bin/frankenphp` |
+| Dashboard, updates, tunnels | identical - one PHP codebase, one `scripts/update.php` engine | identical |
+
 ## Updating
 
 Terminal:

@@ -6,6 +6,16 @@ for %%i in ("%~dp0..") do set "LOCADEV_DIR=%%~fi"
 if not exist "%LOCADEV_DIR%\Caddyfile" if exist "D:\Locadev\Caddyfile" set "LOCADEV_DIR=D:\Locadev"
 if not exist "%LOCADEV_DIR%\Caddyfile" if exist "%USERPROFILE%\Locadev\Caddyfile" set "LOCADEV_DIR=%USERPROFILE%\Locadev"
 
+rem Path of THIS script. Windows keeps READING a .cmd while it runs, so the updater must never
+rem rewrite the file it is executing - see :do_update.
+set "LOCADEV_SELF=%~f0"
+
+rem Version of the code in THIS install, read from the one source of truth (the constant the
+rem dashboard serves). Empty when unreadable - the CLI never guesses a version. Same rule as the
+rem bash CLI, and the reason the banner can print it on Windows too (README line 117).
+set "LOCADEV_VER="
+for /f "tokens=4 delims='" %%v in ('findstr /c:LOCODEV_VERSION "%LOCADEV_DIR%\dashboard\api.php" 2^>nul') do set "LOCADEV_VER=%%v"
+
 rem ANSI escape codes (native, Windows 10+ terminal)
 rem NOTE: the char right after ESC= is a literal 0x1B byte - do not retype this line
 set "ESC="
@@ -36,6 +46,10 @@ if /i "%ACTION%"=="status" goto do_status
 if /i "%ACTION%"=="open" goto do_open
 if /i "%ACTION%"=="db-export" goto do_db_export
 if /i "%ACTION%"=="db-import" goto do_db_import
+if /i "%ACTION%"=="version" goto do_version
+if /i "%ACTION%"=="--version" goto do_version
+if /i "%ACTION%"=="-v" goto do_version
+if /i "%ACTION%"=="update" goto do_update
 if /i "%ACTION%"=="help" goto do_help
 if /i "%ACTION%"=="--help" goto do_help
 if /i "%ACTION%"=="-h" goto do_help
@@ -73,6 +87,41 @@ goto :eof
 call :banner
 call :summary
 goto :eof
+
+:do_version
+rem Bare output on purpose: scripts read it, the version command is not a banner.
+if defined LOCADEV_VER echo Locadev %LOCADEV_VER%
+if not defined LOCADEV_VER echo Locadev (unknown)
+goto :eof
+
+:do_update
+rem Windows keeps READING this .cmd while it runs, so an update that rewrites bin\locadev.cmd
+rem in place corrupts the running script: cmd resumes at a stale file offset, prints "The system
+rem cannot find the path specified." and then falls into unrelated labels (db-export ran on its
+rem own once). The update therefore runs from a copy in %TEMP%, and that copy re-enters this
+rem label with LOCADEV_PARENT_DIR set.
+if not defined LOCADEV_PARENT_DIR goto do_update_external
+set "LOCADEV_DIR=%LOCADEV_PARENT_DIR%"
+if not exist "%LOCADEV_DIR%\bin\php.exe" (
+    echo %C_RED%[Locadev] No bundled PHP found - cannot update.%C_RESET%
+    goto :eof
+)
+call :banner
+"%LOCADEV_DIR%\bin\php.exe" "%LOCADEV_DIR%\scripts\update.php" %2 %3 %4
+rem The copy stays in %TEMP% on purpose. A batch cannot delete itself: cmd keeps reading it after
+rem the delete and reports "The batch file cannot be found." (tried both as a bare line and joined
+rem with goto on one line - two lines, two errors). The path is fixed, so every update overwrites
+rem it and it can never linger as a stale copy of an older CLI.
+goto :eof
+
+:do_update_external
+set "LOCADEV_PARENT_DIR=%LOCADEV_DIR%"
+set "LOCADEV_UPDATER=%TEMP%\locadev-update.cmd"
+copy /y "%LOCADEV_SELF%" "%LOCADEV_UPDATER%" >nul
+rem Invoked WITHOUT 'call': cmd hands control to the copy and never returns here, which is exactly
+rem why the file an update rewrites (this one) is never read again. Everything after this line is
+rem dead - cleanup belongs in the copy, above.
+"%LOCADEV_UPDATER%" update %2 %3 %4
 
 :do_open
 start https://localhost
@@ -148,6 +197,8 @@ echo   reload      Hot reload Caddyfile without downtime
 echo   status      Show running status of services
 echo   db-export   Dump all user databases to a .sql file (default data\db-sync.sql)
 echo   db-import   Import a .sql dump, replacing the databases it contains
+echo   version     Print the installed Locadev version (also: -v, --version)
+echo   update      Update Locadev in place (data\ and sites\ untouched)
 echo   menu        Interactive control menu
 echo   open        Open dashboard in default web browser
 goto :eof
@@ -159,7 +210,7 @@ call :summary
 echo ===================================================
 echo   1) Start      2) Stop       3) Restart
 echo   4) Reload     5) Status     6) Open
-echo   0) Exit
+echo   7) Update     0) Exit
 echo ===================================================
 set "MENU_CHOICE="
 set /p MENU_CHOICE=   Choose a number and press Enter: 
@@ -170,6 +221,7 @@ if "%MENU_CHOICE%"=="2" call :body_stop
 if "%MENU_CHOICE%"=="3" call :body_restart
 if "%MENU_CHOICE%"=="4" call :body_reload
 if "%MENU_CHOICE%"=="6" start https://localhost
+if "%MENU_CHOICE%"=="7" call :do_update
 goto menu_loop
 
 :: ===== Action bodies (no banner / no summary) =====
@@ -259,8 +311,12 @@ goto :eof
 
 :banner
 echo ===================================================
+rem Same shape as the bash banner: "Locadev v<version> - Just runs. Natively."
+if not defined LOCADEV_VER goto banner_noversion
+echo   Locadev v%LOCADEV_VER% - Just runs. Natively.
+goto :eof
+:banner_noversion
 echo   Locadev - Just runs. Natively.
-echo ===================================================
 goto :eof
 
 :summary

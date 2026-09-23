@@ -1,0 +1,60 @@
+name: CI
+
+# Locadev ships one PHP codebase to three platforms, so the code that decides between them has to
+# be exercised on all three. Until this workflow existed there was no automated check at all: the
+# Windows CLI went without the `version` and `update` verbs that Linux/macOS had, and the release
+# archive's `tar` extraction silently needed a `tar` binary that reads C:\ paths correctly.
+#
+# What runs where:
+#   - `php -l` on every tracked PHP file: cheap, catches a broken merge on any platform.
+#   - scripts/self-check.php: the project's own test (no network, no server, no bundled binaries
+#     needed - it uses the PHP running it). This is the check that has to hold everywhere.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 8.1 is the floor: the code uses str_contains/str_starts_with and first-class callable
+      # syntax. `phar` is needed by the extraction check, `pdo_mysql` by the dashboard.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: phar, zlib, pdo_mysql
+          coverage: none
+
+      - name: Lint every PHP file
+        shell: bash
+        run: |
+          set -euo pipefail
+          n=0
+          # `read -d ''`, not `mapfile`: macOS runners still ship bash 3.2, where mapfile does
+          # not exist and the step would fail for a reason that has nothing to do with the code.
+          while IFS= read -r -d '' f; do php -l "$f" >/dev/null; n=$((n + 1)); done \
+            < <(git ls-files -z '*.php')
+          echo "linted $n file(s)"
+
+      - name: Bash scripts parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in bin/locadev start.sh stop.sh install.sh scripts/make-bundles.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f" && echo "ok   $f"
+          done
+
+      - name: self-check
+        shell: bash
+        run: php scripts/self-check.php

@@ -205,6 +205,45 @@ check('runtime_versions() reads FrankenPHP, PHP and Caddy versions from the bina
     return $semver($v['frankenphp']) && $semver($v['php']) && $semver($v['caddy']);
 })());
 
+/**
+ * Executable bits after an update, on its own: the check above bails out early when symlinks
+ * cannot be created (that is Windows without Developer Mode), so every exec-bit assertion inside
+ * it is vacuous on the very platform this rule was written for. bin/frankenphp joined the list
+ * the day start.sh stopped chmod-ing it as a side effect, so it needs its own coverage.
+ * The bit is asserted only on POSIX: NTFS has no exec flag and PHP reports 0666 either way, so on
+ * Windows this checks the copy happened and leaves the real assertion to CI (ubuntu/macos).
+ */
+check('an update restores the executable bit on the binaries it ships', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+
+    $tmp = sys_get_temp_dir() . '/locadev-selfcheck-exec-' . getmypid();
+    locadev_rm_tree($tmp);
+    @mkdir($tmp . '/src/bin', 0777, true);
+    @mkdir($tmp . '/dst/bin', 0777, true);
+    foreach (['locadev', 'frankenphp'] as $bin) {
+        file_put_contents($tmp . '/src/bin/' . $bin, 'x');
+        chmod($tmp . '/src/bin/' . $bin, 0644); // what the release archive stores
+    }
+
+    locadev_copy_tree($tmp . '/src', $tmp . '/dst', []);
+
+    $ok = true;
+    foreach (['locadev', 'frankenphp'] as $bin) {
+        $dst = $tmp . '/dst/bin/' . $bin;
+        $ok = $ok && is_file($dst)
+            && (PHP_OS_FAMILY === 'Windows' || (fileperms($dst) & 0111) !== 0);
+    }
+    locadev_rm_tree($tmp);
+    return $ok;
+})());
+
+// System Info names which MariaDB this install runs: bundled on Windows, the system package on
+// Linux/macOS. The answer differs per platform, but it must never be empty - an empty row is how
+// a broken lookup hides.
+check('mariadb_server_binary() always names a source', (function (): bool {
+    return mariadb_server_binary() !== '';
+})());
+
 echo "PHP configuration\n";
 // php_ini_defaults() is what the dashboard writes on an install with no php.ini (Linux/macOS).
 // The page reads that file back with config_ini_values(), so both sides must agree on the format.
@@ -294,6 +333,65 @@ check('copy_tree never replaces a symlink, a skipped path, or leaks bundle-side 
 
     exec(PHP_OS_FAMILY === 'Windows' ? 'rd /s /q ' . escapeshellarg($tmp) : 'rm -rf ' . escapeshellarg($tmp));
     return (bool) $ok;
+})());
+
+// The one comparison that decides whether anything is downloaded at all. It was false for an
+// install on the newest release ('1.4.3' vs 'v1.4.3'), so every run re-fetched the whole release
+// just to write back the files it already had.
+check('up_to_date folds the tag, keeps a newer checkout, and never trusts an unreadable version', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+
+    return locadev_up_to_date('1.4.3', 'v1.4.3') === true    // newest release: nothing to do
+        && locadev_up_to_date('1.4.2', 'v1.4.3') === false   // behind: download
+        && locadev_up_to_date('1.4.4', 'v1.4.3') === true    // ahead: never downgrade
+        && locadev_up_to_date('', 'v1.4.3') === false;       // unreadable: repair by re-copying
+})());
+
+// Deleting a tree must not go through the shell either: 'rm -rf ... 2>/dev/null' made cmd.exe
+// print "The system cannot find the path specified." and delete nothing, so the stale-temp sweep
+// silently did nothing on Windows and %TEMP% kept every abandoned update dir.
+// cmd.exe splits a batch argument on '=', so the documented `locadev update --tag=v1.2.0`
+// arrives as a pair. Matching only the '=' form meant a Windows pin was silently ignored.
+check('arg_tag reads --tag=vX.Y.Z and the pair cmd.exe splits it into', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+
+    return locadev_arg_tag(['update.php', '--tag=v1.2.0']) === 'v1.2.0'
+        && locadev_arg_tag(['update.php', '--tag', 'v1.2.0']) === 'v1.2.0'  // what cmd.exe hands over
+        && locadev_arg_tag(['update.php', '--check']) === ''
+        && locadev_arg_tag(['update.php']) === '';
+})());
+
+check('rm_tree deletes a nested tree and leaves the sibling alone', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+
+    $tmp = sys_get_temp_dir() . '/locadev-selfcheck-rm-' . getmypid();
+    locadev_rm_tree($tmp);
+    @mkdir($tmp . '/a/b/c', 0777, true);
+    file_put_contents($tmp . '/a/b/c/deep.txt', 'x');
+    file_put_contents($tmp . '/keep.txt', 'x');
+
+    locadev_rm_tree($tmp . '/a');
+    $ok = !is_dir($tmp . '/a') && file_get_contents($tmp . '/keep.txt') === 'x';
+    locadev_rm_tree($tmp);
+    return $ok && !is_dir($tmp);
+})());
+
+// Extraction must not depend on a `tar` binary: GNU tar (Git for Windows ships one, PATH order
+// decides who wins) reads "C:\..." as the remote form host:path and died with "Cannot connect to
+// C: resolve failed", leaving the update dead after download. Skips when dist/ is not built: the
+// tarball is the bundle itself and dist/ is git-ignored.
+check('extract reads a release tarball without shelling out to tar', (function () use ($root): bool {
+    require_once $root . '/scripts/update.php';
+
+    $tgz = $root . '/dist/locadev-repo.tar.gz';
+    if (!is_file($tgz)) {
+        return true; // bundle not built here: nothing to test
+    }
+    $out = sys_get_temp_dir() . '/locadev-selfcheck-x-' . getmypid();
+    locadev_rm_tree($out);
+    $ok = locadev_extract($tgz, $out) === '' && is_file($out . '/locadev-main/dashboard/api.php');
+    locadev_rm_tree($out);
+    return $ok && !is_dir($out);
 })());
 
 ob_end_flush();

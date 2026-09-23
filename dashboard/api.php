@@ -8,7 +8,7 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.4.3');
+define('LOCODEV_VERSION', '1.4.4');
 
 /**
  * AdminNeo is mirrored on Locadev's own releases: upstream ships no asset and no adminneo.php in
@@ -19,7 +19,7 @@ define('LOCODEV_VERSION', '1.4.3');
  */
 const ADMINNEO_VERSION = '5.8.0';
 const ADMINNEO_ASSET = 'adminneo-5.8.0.zip';
-const ADMINNEO_RELEASE = 'v1.4.3';
+const ADMINNEO_RELEASE = 'v1.4.4';
 const ADMINNEO_URL = 'https://adminneo.localhost';
 
 /** MariaDB's own schemas: never counted or shown as user databases, never droppable. */
@@ -489,6 +489,34 @@ function cloudflared_bin() {
 function tunnels_state_file() {
     global $baseDir;
     return $baseDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'tunnels.json';
+}
+
+/**
+ * Where this install's MariaDB server binary comes from. Windows ships one inside bin/ (it moves
+ * only when Locadev moves); Linux and macOS use the system package, which follows OS updates.
+ * The dashboard shows it so "which MariaDB am I actually running" has one answer on every OS.
+ */
+function mariadb_server_binary(): string {
+    global $baseDir;
+
+    $bundled = $baseDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'mariadb'
+        . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'mariadbd'
+        . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
+    if (is_file($bundled)) {
+        return 'bundled — bin/mariadb';
+    }
+
+    foreach (['mariadbd', 'mysqld'] as $name) {
+        $out = [];
+        $lookup = PHP_OS_FAMILY === 'Windows' ? 'where ' . $name . ' 2>nul' : 'command -v ' . $name . ' 2>/dev/null';
+        @exec($lookup, $out);
+        $path = trim((string) ($out[0] ?? ''));
+        if ($path !== '' && is_file($path)) {
+            return 'system — ' . $path;
+        }
+    }
+
+    return 'unknown (not bundled, not found on PATH)';
 }
 
 /** @return array<string, array{pid:int,url:string,host:string,started:int}> */

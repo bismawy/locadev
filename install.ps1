@@ -7,7 +7,7 @@
     on PATH, and starts everything. Re-running upgrades in place - user data
     (data/, sites/, config/sites.json) is never touched.
 .EXAMPLE
-    irm https://raw.githubusercontent.com/USERNAME/locadev/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/bismawy/locadev/main/install.ps1 | iex
 #>
 
 $ErrorActionPreference = 'Stop'
