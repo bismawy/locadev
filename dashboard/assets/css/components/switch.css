@@ -41,7 +41,7 @@ input:checked + .slider:before {
   background-color: var(--primary-fg);
 }
 
-/* Disabled: redup + cursor not-allowed agar jelas tidak bisa diubah */
+/* Disabled: dimmed + not-allowed cursor so it clearly cannot be changed */
 .switch:has(input:disabled) {
   opacity: 0.4;
   cursor: not-allowed;

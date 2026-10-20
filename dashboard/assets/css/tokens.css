@@ -44,7 +44,7 @@
   /* --- 2. Primary Accent (Arnative Monochrome Slate — mengikuti tema) --- */
   --primary: oklch(0.20 0.01 260);
   --primary-foreground: oklch(0.99 0 0);
-  --primary-hover: oklch(0.30 0.01 260); /* WAJIB didefinisikan — invalid var() = background hover transparan */
+  --primary-hover: oklch(0.30 0.01 260); /* MUST be defined — an invalid var() leaves the hover background transparent */
   --primary-tint: oklch(from var(--primary) l c h / 0.08);
   --primary-ring: oklch(from var(--primary) l c h / 0.16);
 
@@ -65,7 +65,7 @@
   --secondary-foreground: var(--foreground);
   --accent-foreground: var(--foreground);
   --input: var(--border);
-  --input-hover: oklch(0.8 0.008 106.5); /* hover/fokus field: antara border & fg, tidak mencolok */
+  --input-hover: oklch(0.8 0.008 106.5); /* field hover/focus: between border & fg, unobtrusive */
   --field-bg: var(--card);
   --ring: var(--primary);
 
@@ -76,8 +76,8 @@
   --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--foreground);
   --sidebar-w: 15rem;
-  --header-h: 3.5rem; /* shared header row height — sidebar-head & app-header wajib sama tinggi (border-box) */
-  --header-control-h: 2.125rem; /* tinggi kontrol sejajar di baris header: btn-header, server-status-group, icon-btn header/sidebar-head */
+  --header-h: 3.5rem; /* shared header row height — sidebar-head & app-header must match height (border-box) */
+  --header-control-h: 2.125rem; /* height of aligned controls in the header row: btn-header, server-status-group, icon-btn header/sidebar-head */
 
   /* Legacy alias helper variables mapped to Arnative tokens */
   --bg: var(--background);
@@ -98,7 +98,7 @@
   --danger-bg: oklch(from var(--destructive) l c h / 0.1);
   --shadow-xs: 0 1px 0.125rem 0 rgb(0 0 0 / 0.04);
   --radius-sm: 0.375rem;
-  --radius-md: 0.5rem; /* kontrol interaktif: tombol, input, nav item (Arnative rounded-lg) */
+  --radius-md: 0.5rem; /* interactive controls: buttons, inputs, nav items (Arnative rounded-lg) */
   --radius-lg: var(--radius);
 
   --sidebar-bg: var(--sidebar);
@@ -120,7 +120,7 @@
   /* --- Primary Accent (Arnative Dark: Monochrome Slate) --- */
   --primary: oklch(0.94 0.01 260);
   --primary-foreground: oklch(0.18 0.01 260);
-  --primary-hover: oklch(1 0 0); /* putih penuh saat hover di dark */
+  --primary-hover: oklch(1 0 0); /* pure white on hover in dark */
   --primary-tint: oklch(from var(--primary) l c h / 0.10);
   --primary-ring: oklch(from var(--primary) l c h / 0.20);
 
@@ -134,10 +134,10 @@
   --info: oklch(0.74 0.15 250);
   --info-foreground: oklch(0.18 0.04 250);
 
-  /* Input dark butuh kontras lebih dari card agar border terlihat saat idle */
-  --input: var(--border); /* halus — cukup terlihat karena field recessed (bg 0.19) */
+  /* Dark inputs need more contrast than cards so the border shows when idle */
+  --input: var(--border); /* subtle — visible enough because fields are recessed (bg 0.19) */
   --input-hover: oklch(0.45 0.004 84.6);
-  /* Field recessed: lebih gelap dari card/modal (input, select, filter) */
+  /* Recessed fields: darker than card/modal (input, select, filter) */
   --field-bg: oklch(0.19 0.004 84.6);
 }
 
@@ -157,7 +157,7 @@ body {
   font-size: 0.875rem;
 }
 
-/* Skip link (WCAG 2.4.1): tersembunyi, muncul saat keyboard focus */
+/* Skip link (WCAG 2.4.1): hidden, shown on keyboard focus */
 .skip-link {
   position: fixed;
   top: 0.75rem;
@@ -175,7 +175,7 @@ body {
   transform: translateY(0);
 }
 
-/* Fokus-angka: semua data numerik & pagination pakai tabular-nums */
+/* Numeric focus: all numeric data & pagination use tabular-nums */
 .table-pagination,
 .pagination-page-btn,
 .cell-muted,

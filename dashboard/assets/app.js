@@ -24,7 +24,7 @@ function showToast(msg, isError = false) {
 }
 
 // htmx 4 config: DOM morphing by default (preserves inputs/toolbars in-place without flicker/recreation).
-// 4xx/5xx tidak di-swap (perilaku lama v2) — error tetap memicu toast/ignore.
+// 4xx/5xx are not swapped (old v2 behavior) — errors still trigger toast/ignore.
 htmx.config.defaultSwap = 'innerMorph';
 htmx.config.transitions = false;
 htmx.config.noSwap = [204, 304, '4xx', '5xx'];
@@ -58,7 +58,7 @@ function showProgressToast(msg) {
   return toast;
 }
 
-// Elemen ber-atribut data-progress menampilkan toast itu selama requestnya berjalan.
+// Elements with a data-progress attribute show that toast while their request runs.
 document.body.addEventListener('htmx:before:request', (e) => {
   const elt = e.detail?.elt || e.target;
   if (elt?.dataset?.progress) elt._progressToast = showProgressToast(elt.dataset.progress);
@@ -66,7 +66,7 @@ document.body.addEventListener('htmx:before:request', (e) => {
 document.body.addEventListener('htmx:after:request', (e) => {
   const elt = e.detail?.elt || e.target;
   if (elt?._progressToast) {
-    elt._progressToast.remove(); // hasil akhirnya tetap dari toast server (HX-Trigger)
+    elt._progressToast.remove(); // the final result still comes from the server toast (HX-Trigger)
     elt._progressToast = null;
   }
 });
@@ -155,11 +155,11 @@ window.addEventListener('click', (e) => {
   if (select && !select.contains(e.target)) select.classList.remove('open');
 });
 
-/* Klik backdrop (di luar kotak dialog) menutup modal — native dialog tidak melakukannya otomatis */
+/* Backdrop click (outside the dialog box) closes the modal — native dialog does not do this automatically */
 document.querySelectorAll('dialog.modal').forEach((dlg) => {
   dlg.addEventListener('click', (e) => {
     if (e.target !== dlg) return;
-    // site-modal: jangan tutup saat instalasi berjalan (progress view tanpa footer)
+    // site-modal: do not close while an install runs (progress view without footer)
     const installing = dlg.id === 'site-modal'
       && document.getElementById('site-progress-view').style.display === 'block'
       && document.getElementById('progress-footer').style.display === 'none';
@@ -452,9 +452,9 @@ function updateProgressStep(data, stepsMap) {
 }
 
 
-// ===== Generic custom select (data-generic) — pola inline yang sama dgn preset =====
-// Hanya toggle class .open pada wrapper; menu tetap di dalam markup (top: 100%,
-// selebar trigger). Aman setelah htmx swap karena pakai event delegation.
+// ===== Generic custom select (data-generic) — same inline pattern as preset =====
+// Only toggles the .open class on the wrapper; the menu stays in the markup (top: 100%,
+// trigger width). Safe after htmx swaps because it uses event delegation.
 document.addEventListener('click', (e) => {
   const trigger = e.target.closest('.custom-select[data-generic] > .select-trigger');
   if (trigger) {
@@ -481,8 +481,8 @@ document.addEventListener('click', (e) => {
   document.querySelectorAll('.custom-select[data-generic].open').forEach((el) => el.classList.remove('open'));
 });
 
-// ===== Configuration: Save Configuration disabled sampai ada perubahan =====
-// Snapshot nilai form saat view terbuka; tombol aktif hanya jika nilai sekarang beda.
+// ===== Configuration: Save Configuration disabled until something changes =====
+// Snapshot form values when the view opens; the button enables only when current values differ.
 let configSnapshot = null;
 
 function snapshotConfig() {
@@ -513,9 +513,9 @@ document.body.addEventListener('htmx:after:swap', () => { // htmx 4: nama event 
 });
 resetConfigSnapshot(); // initial load
 
-/* ---------- Salin ringkasan versi (System Info) ---------- */
-// Teksnya ditaruh server di data-copy tombol, jadi cuma satu sumber dan tidak ada
-// elemen tersembunyi yang bisa basi setelah htmx swap. Delegasi aman setelah swap.
+/* ---------- Copy version summary (System Info) ---------- */
+// The server puts the text in the button's data-copy, so there is one source and no
+// hidden element that can go stale after an htmx swap. Delegation is safe after swaps.
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-copy]');
   if (!btn) return;

@@ -8,7 +8,7 @@
   backdrop-filter: blur(0.75rem);
   -webkit-backdrop-filter: blur(0.75rem);
   border-bottom: 1px solid var(--border);
-  height: var(--header-h); /* border-box agar border-bottom berada tepat di y 55-56, sejajar .sidebar-head */
+  height: var(--header-h); /* border-box so border-bottom sits exactly at y 55-56, aligned with .sidebar-head */
   box-sizing: border-box;
   position: sticky;
   top: 0;

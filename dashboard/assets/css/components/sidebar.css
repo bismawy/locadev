@@ -22,7 +22,7 @@
   z-index: 50;
 }
 
-/* Arnative smooth slide: sidebar geser keluar ke kiri, tetap terlihat selama animasi */
+/* Arnative smooth slide: sidebar slides out to the left, staying visible during the animation */
 body.sidebar-collapsed .sidebar {
   transform: translateX(-100%);
 }
@@ -33,7 +33,7 @@ body.sidebar-collapsed .sidebar {
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0 1rem;
-  height: var(--header-h); /* border-box: 3.4375rem konten + 1px border = sama presis dengan .app-header */
+  height: var(--header-h); /* border-box: 3.4375rem content + 1px border = exactly matches .app-header */
   border-bottom: 1px solid var(--sidebar-border);
   box-sizing: border-box;
 }
@@ -93,7 +93,7 @@ html:not(.dark) .brand-logo {
   background: var(--sidebar-accent);
   color: var(--foreground);
 }
-/* Varian destructive untuk aksi baris tabel (delete/drop) — icon-only, lebih minimal */
+/* Destructive variant for table row actions (delete/drop) — icon-only, more minimal */
 .icon-btn-danger:hover {
   background: var(--danger-bg);
   color: var(--danger-fg);
@@ -128,7 +128,7 @@ body.sidebar-collapsed .sidebar-expand-btn {
 
 .nav-item {
   display: grid;
-  grid-template-columns: 1.25rem 1fr; /* 2 ikon overlap di kolom 1, label di kolom 2 */
+  grid-template-columns: 1.25rem 1fr; /* 2 icons overlap in column 1, label in column 2 */
   align-items: center;
   column-gap: 0.75rem;
   padding: 0.5rem 0.75rem;
@@ -155,7 +155,7 @@ body.sidebar-collapsed .sidebar-expand-btn {
   color: var(--sidebar-accent-foreground);
   font-weight: 600;
 }
-/* Crossfade + zoom antar pasangan ikon outlined ↔ filled (bukan display toggle) */
+/* Crossfade + zoom between outlined ↔ filled icon pairs (not a display toggle) */
 .nav-item .msr,
 .nav-item .msr-fill {
   grid-area: 1 / 1;
@@ -175,7 +175,7 @@ body.sidebar-collapsed .sidebar-expand-btn {
   opacity: 1;
   transform: scale(1);
 }
-/* Reduced motion global (Arnative WAJIB): matikan transisi/animasi dekoratif */
+/* Global reduced motion (Arnative REQUIRED): disable decorative transitions/animations */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -202,11 +202,11 @@ body.sidebar-collapsed .sidebar-expand-btn {
 }
 .form-input:focus-visible {
   outline: none;
-  border-color: var(--input-hover); /* netral, jelas terlihat tapi tidak menyilaukan */
+  border-color: var(--input-hover); /* neutral, clearly visible but not glaring */
 }
 .select-trigger:focus-visible,
 .select-trigger:focus {
-  outline: none; /* tanpa indikator fokus: state open (menu nempel + chevron) sudah jadi feedback */
+  outline: none; /* no focus indicator: the open state (attached menu + chevron) is already the feedback */
 }
 .form-checkbox:focus-visible,
 .slider:has(input:focus-visible) {
@@ -229,7 +229,7 @@ body.sidebar-collapsed .sidebar-expand-btn {
   font-size: 0.6875rem;
   color: var(--muted-foreground);
 }
-/* Pills status di footer: full width vertikal */
+/* Status pills in the footer: full-width, vertical */
 .sidebar-foot .server-status-group {
   display: flex;
   flex-direction: column;

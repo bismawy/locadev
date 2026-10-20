@@ -25,7 +25,7 @@
   outline: none;
 }
 .form-input::placeholder {
-  color: var(--muted-foreground); /* token TEKS, bukan --muted (token surface) */
+  color: var(--muted-foreground); /* TEXT token, not --muted (surface token) */
 }
 
 .form-checkbox-label {
@@ -73,14 +73,14 @@
   user-select: none;
   text-align: left;
 }
-/* Hover: sedikit lebih tegas dari idle; saat open: tanpa perubahan border/outline */
+/* Hover: slightly stronger than idle; when open: no border/outline change */
 .select-trigger:hover {
   border-color: var(--input-hover);
 }
 .custom-select.open .select-trigger {
   border-color: var(--input);
 }
-/* Dropdown menyatu dengan trigger: sudut bawah trigger rata, menu nempel di bawahnya */
+/* Dropdown merges with the trigger: flat bottom corners on the trigger, menu attached below it */
 .custom-select.open .select-trigger {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
@@ -100,7 +100,7 @@
   top: 100%;
   left: 0;
   right: 0;
-  background: var(--field-bg); /* sama dengan trigger — satu kesatuan visual */
+  background: var(--field-bg); /* same as the trigger — one visual unit */
   border: 1px solid var(--border);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   padding: 0.25rem;

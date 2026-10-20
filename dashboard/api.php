@@ -429,12 +429,12 @@ function frankenphp_bin() {
 }
 
 /**
- * Versi runtime yang benar-benar terpasang (bukan yang diharapkan).
+ * Runtime versions actually installed (not the expected ones).
  *
- * FrankenPHP menyatukan PHP + Caddy dalam satu biner, jadi satu eksekusi `version`
- * memberi ketiganya sekaligus (~0,15 dtk). cloudflared biner terpisah dan hanya ada
- * setelah tombol terowongan pertama diklik. Hasil dikunci per request: penguraian
- * regex gagal senyap kalau format upstream berubah, karena itu ada cek di self-check.
+ * FrankenPHP bundles PHP + Caddy into one binary, so a single `version`
+ * run yields all three at once (~0.15 s). cloudflared is a separate binary that only exists
+ * after the first tunnel button click. Results are cached per request: regex parsing
+ * fails silently if the upstream format changes, which is why self-check covers it.
  *
  * @return array{frankenphp:string,php:string,caddy:string,cloudflared:string}
  */
@@ -478,7 +478,7 @@ function runtime_versions(): array {
 }
 
 /* ================= Cloudflare Quick Tunnel (trycloudflare.com) ================= */
-/** Satu situs = satu cloudflared; state runtime ada di data/tunnels.json (gitignored). */
+/** One site = one cloudflared; runtime state lives in data/tunnels.json (gitignored). */
 
 function cloudflared_bin() {
     global $baseDir;
@@ -529,7 +529,7 @@ function write_tunnels(array $tunnels): void {
     @file_put_contents(tunnels_state_file(), json_encode($tunnels, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 }
 
-/** Nama aset rilis cloudflared untuk OS/arsitektur ini (null = tidak didukung). */
+/** cloudflared release asset name for this OS/architecture (null = unsupported). */
 function cloudflared_asset(): ?string {
     $os = ['Windows' => 'windows', 'Linux' => 'linux', 'Darwin' => 'darwin'][PHP_OS_FAMILY] ?? null;
     if ($os === null) {
@@ -556,9 +556,9 @@ function adminneo_installed(): bool {
 /** AdminNeo config: application login root/locadev, DB root without a password. */
 function adminneo_config_php(): string {
     return "<?php\n"
-        . "// AdminNeo config — login aplikasi: user \"root\" + password \"locadev\"\n"
-        . "// (password level aplikasi, BUKAN password MariaDB — DB root terhubung tanpa password).\n"
-        . "// Aman karena Caddyfile bind loopback-only. Ubah hash di bawah untuk ganti password.\n"
+        . "// AdminNeo config — application login: user \"root\" + password \"locadev\"\n"
+        . "// (application-level password, NOT the MariaDB password — DB root connects without a password).\n"
+        . "// Safe because the Caddyfile binds loopback-only. Change the hash below to change the password.\n"
         . "return [\n"
         . "\t\"defaultDriver\" => \"mysql\",\n"
         . "\t\"defaultPasswordHash\" => '" . password_hash('locadev', PASSWORD_DEFAULT) . "',\n"
@@ -603,7 +603,7 @@ function ensure_adminneo(): array {
 
     set_time_limit(0);
     $ctx = stream_context_create(['http' => ['timeout' => 300, 'user_agent' => 'locadev']]);
-    if (!@copy($url, $tmp) || filesize($tmp) < 100000) { // <100 KB = halaman error, bukan programnya
+    if (!@copy($url, $tmp) || filesize($tmp) < 100000) { // <100 KB = an error page, not the program
         @unlink($tmp);
         return ['success' => false, 'error' => 'Download failed (no network, or the Locadev release has no ' . ADMINNEO_ASSET . ')'];
     }
@@ -640,7 +640,7 @@ function ensure_adminneo(): array {
     return ['success' => true];
 }
 
-/** Unduh cloudflared sekali saja (~50 MB) dari GitHub releases. */
+/** Download cloudflared once (~50 MB) from GitHub releases. */
 function ensure_cloudflared(): array {
     $bin = cloudflared_bin();
     if (is_file($bin) && filesize($bin) > 1000) {
@@ -656,15 +656,15 @@ function ensure_cloudflared(): array {
         return ['success' => false, 'error' => 'allow_url_fopen is disabled — cannot download cloudflared'];
     }
 
-    // Stream HTTP (bukan curl): build PHP di Windows tidak punya CA bundle untuk curl,
-    // sedangkan stream HTTPS diverifikasi normal — sama seperti unduhan CMS di atas.
+    // HTTP stream (not curl): the Windows PHP build has no CA bundle for curl,
+    // while HTTPS streams verify normally — same as the CMS download above.
     $url = 'https://github.com/cloudflare/cloudflared/releases/latest/download/' . $asset;
     $tmp = $bin . '.part';
     @mkdir(dirname($bin), 0777, true);
-    set_time_limit(0); // unduhan melebihi max_execution_time (30 dtk)
+    set_time_limit(0); // the download exceeds max_execution_time (30 s)
     $ctx = stream_context_create(['http' => ['timeout' => 900, 'user_agent' => 'locadev']]);
     $ok = @copy($url, $tmp, $ctx);
-    if (!$ok || filesize($tmp) < 1000000) { // <1 MB = hampiran halaman error, bukan biner
+    if (!$ok || filesize($tmp) < 1000000) { // <1 MB = most likely an error page, not the binary
         @unlink($tmp);
         return ['success' => false, 'error' => 'Download failed (no network, or the GitHub release is unreachable)'];
     }
@@ -684,12 +684,12 @@ function ensure_cloudflared(): array {
     return ['success' => true];
 }
 
-/** URL publik yang dicetak cloudflared di log-nya. */
+/** Public URL that cloudflared prints in its log. */
 function tunnel_url_from_log(string $log): ?string {
     return preg_match('~https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com~i', $log, $m) ? $m[0] : null;
 }
 
-/** Kill pid — hanya bila prosesnya benar-benar cloudflared (pid bisa didaur ulang). */
+/** Kill pid — only if the process really is cloudflared (pids can be recycled). */
 function stop_tunnel_pid(int $pid): void {
     if ($pid <= 0) {
         return;
@@ -704,7 +704,7 @@ function stop_tunnel_pid(int $pid): void {
         return;
     }
     $out = [];
-    exec('ps -p ' . $pid . ' -o args= 2>/dev/null', $out); // ada di Linux & macOS
+    exec('ps -p ' . $pid . ' -o args= 2>/dev/null', $out); // available on Linux & macOS
     if (!str_contains(strtolower(implode(' ', $out)), 'cloudflared')) {
         return;
     }
@@ -721,27 +721,27 @@ function stop_site_tunnel(string $id): void {
     write_tunnels($tunnels);
 }
 
-/** Jalankan cloudflared untuk satu situs; mengembalikan URL publiknya. */
+/** Run cloudflared for one site; returns its public URL. */
 /**
- * WordPress/ClassicPress menyimpan URL absolut (https://<nama>.localhost) di database, sehingga
- * pengunjung dari luar (mis. ponsel) gagal memuat CSS/aset miliknya. mu-plugin ini mengganti host
- * HANYA ketika permintaan datang lewat domain Quick Tunnel; akses lokal tidak berubah.
+ * WordPress/ClassicPress store absolute URLs (https://<name>.localhost) in the database, so
+ * outside visitors (e.g. a phone) fail to load its CSS/assets. This mu-plugin swaps the host
+ * ONLY when the request arrives through the Quick Tunnel domain; local access is unchanged.
  */
 function ensure_tunnel_url_plugin(array $site): void {
     $root = rtrim(str_replace('\\', '/', (string) ($site['root'] ?? '')), '/');
     $content = $root . '/wp-content';
     if ($root === '' || !is_dir($content)) {
-        return; // bukan situs WordPress/ClassicPress
+        return; // not a WordPress/ClassicPress site
     }
     $dir = $content . '/mu-plugins';
     $file = $dir . '/locadev-tunnel-url.php';
-        // HTTP_HOST tetap <nama>.localhost di sisi origin (--http-host-header), jadi host publik
-    // dibaca dari X-Forwarded-Host yang HANYA dikirim cloudflared pada permintaan lewat tunnel.
+        // HTTP_HOST stays <name>.localhost at the origin (--http-host-header), so the public host
+    // is read from X-Forwarded-Host, which cloudflared sends ONLY on requests through the tunnel.
     $code = <<<'PHP'
 <?php
 /**
  * Plugin Name: Locadev Tunnel URL
- * Description: Pakai host publik saat situs diakses lewat Cloudflare Tunnel Locadev.
+ * Description: Use the public host when the site is accessed through a Locadev Cloudflare Tunnel.
  */
 $locadevPublic = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '';
 if (str_ends_with($locadevPublic, '.trycloudflare.com')) {
@@ -749,8 +749,8 @@ if (str_ends_with($locadevPublic, '.trycloudflare.com')) {
     $locadevLocal = 'https://' . ($_SERVER['HTTP_HOST'] ?? '');
     add_filter('option_home', fn() => $locadevUrl);
     add_filter('option_siteurl', fn() => $locadevUrl);
-    // Aset (wp-content, wp-includes, tema) dibuat dari konstanta yang sudah dihitung sebelum
-    // plugin ini dimuat, jadi host-nya diganti di filter URL masing-masing.
+    // Asset URLs (wp-content, wp-includes, themes) come from constants computed before this
+    // plugin loads, so the host is swapped in each URL filter instead.
     $locadevRewrite = fn($url) => str_replace($locadevLocal, $locadevUrl, (string) $url);
     foreach (['content_url', 'includes_url', 'plugins_url', 'theme_root_uri',
               'stylesheet_directory_uri', 'template_directory_uri', 'stylesheet_uri'] as $locadevFilter) {
@@ -758,7 +758,7 @@ if (str_ends_with($locadevPublic, '.trycloudflare.com')) {
     }
 }
 PHP;
-    // sites/ tidak ikut git, jadi file ini dipasang Locadev sendiri (idempoten).
+    // sites/ is not in git, so Locadev installs this file itself (idempotent).
     if (!is_dir($dir)) {
         @mkdir($dir, 0777, true);
     }
@@ -784,16 +784,16 @@ function start_site_tunnel(array $site, string $origin = 'https://localhost'): a
 
     $null = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
 
-    // Origin selalu https://localhost + Host header situs → vhost Caddy yang tepat,
-    // tanpa bergantung pada resolusi DNS *.localhost (tidak universal di Windows).
+    // Origin is always https://localhost + the site's Host header → the right Caddy vhost,
+    // without relying on DNS resolution of *.localhost (not universal on Windows).
     $logDir = $baseDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'tunnels';
     @mkdir($logDir, 0777, true);
     $log = $logDir . DIRECTORY_SEPARATOR . $id . '.log';
     @unlink($log);
 
-    // proc_open dengan descriptor berupa FILE + --logfile (bukan pipe, bukan Start-Process):
-    // anak tidak mewarisi pipe stdout PHP sehingga panggilan ini tidak menggantung.
-    // exec()/popen() + PowerShell Start-Process menggantung sampai cloudflared berhenti.
+    // proc_open with FILE descriptors + --logfile (not a pipe, not Start-Process):
+    // the child inherits no PHP stdout pipe, so this call does not hang.
+    // exec()/popen() + PowerShell Start-Process hang until cloudflared exits.
     $proc = proc_open(
         [
             cloudflared_bin(), 'tunnel', '--url', $origin, '--no-tls-verify',
@@ -810,7 +810,7 @@ function start_site_tunnel(array $site, string $origin = 'https://localhost'): a
     }
     $pid = (int) proc_get_status($proc)['pid'];
 
-    // cloudflared mencetak URL beberapa detik setelah handshake.
+    // cloudflared prints the URL a few seconds after the handshake.
     $url = null;
     for ($i = 0; $i < 40 && $url === null; $i++) {
         usleep(500000);
@@ -1245,7 +1245,7 @@ switch ($action) {
         $matched = null;
         foreach ($sites as &$s) {
             if ($s['id'] === $id) {
-                // flip-semantics: toggle state tersimpan, tidak bergantung field form
+                // flip-semantics: toggle the stored state, independent of form fields
                 $enabled = !$s['enabled'];
                 $s['enabled'] = $enabled;
                 $matched = $s;
@@ -1266,7 +1266,7 @@ switch ($action) {
             if (file_exists($caddyFileForSite)) {
                 @unlink($caddyFileForSite);
             }
-            stop_site_tunnel($id); // situs nonaktif tidak boleh tetap publik
+            stop_site_tunnel($id); // a disabled site must not stay public
         }
 
         save_sites_json($sitesJson, $sites);
@@ -1635,7 +1635,7 @@ switch ($action) {
                 continue;
             }
             $val = trim((string) ($input[$name] ?? ''));
-            // Whitelist: hanya nilai dari dropdown yang boleh masuk ke php.ini
+            // Whitelist: only dropdown values may reach php.ini
             if (!in_array($val, $d['options'], true)) {
                 http_response_code(422);
                 hx_toast("Invalid value '{$val}' for {$name}", true);
@@ -1644,7 +1644,7 @@ switch ($action) {
             $new[$name] = $val;
         }
 
-        // Validasi silang: upload_max_filesize harus <= post_max_size
+        // Cross-check: upload_max_filesize must be <= post_max_size
         $toBytes = function (string $v): int {
             return (int) $v * 1024 ** (['K' => 1, 'M' => 2, 'G' => 3][strtoupper(substr($v, -1))] ?? 0);
         };
@@ -1654,7 +1654,7 @@ switch ($action) {
             exit;
         }
 
-        // Replace kemunculan TERAKHIR tiap direktif (blok Locadev tuning menimpa default di atasnya)
+        // Replace the LAST occurrence of each directive (the Locadev tuning block overrides the defaults above it)
         copy($iniPath, $iniPath . '.bak');
         $raw = file_get_contents($iniPath);
         $crlf = str_contains($raw, "\r\n");
@@ -1699,7 +1699,7 @@ switch ($action) {
         $iniPath = $baseDir . '/bin/php.ini';
 
         if ($name === '' || !file_exists($iniPath)) {
-            // 422: htmx noSwap → tidak di-swap ke #view; pesan lewat toast error
+            // 422: htmx noSwap → not swapped into #view; the message goes through an error toast
             http_response_code(422);
             hx_toast('php.ini not found', true);
             exit;
@@ -1746,8 +1746,8 @@ switch ($action) {
         rename($tmp, $iniPath);
 
         if ($isHx) {
-            // Tidak ada konten tabel yang berubah saat toggle — state checkbox sudah
-            // berubah native di browser. 204 = tanpa swap, animasi switch tidak terputus.
+            // No table content changes on toggle — the checkbox state already changed
+            // natively in the browser. 204 = no swap, so the switch animation is not interrupted.
             hx_toast('Extension ' . $name . ' ' . ($enable ? 'enabled' : 'disabled') . ' — restart server to apply');
             http_response_code(204);
             exit;
