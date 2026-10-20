@@ -85,6 +85,12 @@ $out = probe(['method' => 'POST', 'origin' => 'http://localhost:8080', 'host' =>
 check('same-origin POST passes', str_contains($out, 'php_version'));
 $out = probe(['method' => 'POST', 'post' => ['action' => 'status']]);
 check('POST without Origin (CLI/curl) passes', str_contains($out, 'php_version'));
+// GET never reaches the Origin check, so a cross-site <img> could fire any action that reads
+// no input. create_php_ini is the probe because it is a no-op when bin/php.ini already exists.
+$out = probe(['get' => ['action' => 'create_php_ini']]);
+check('GET cannot trigger a state-changing action', str_contains($out, 'Method not allowed'));
+$out = probe(['get' => ['action' => 'status']]);
+check('GET still serves read-only actions', str_contains($out, 'php_version'));
 
 echo "CMS zip cache\n";
 ob_start();

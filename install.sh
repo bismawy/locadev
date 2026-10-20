@@ -9,7 +9,6 @@
 set -e
 
 GH_REPO="${LOCADEV_GH:-bismawy/locadev}"
-VERSION="${LOCADEV_VERSION:-latest}"
 INSTALL_DIR="${LOCADEV_HOME:-$HOME/locadev}"
 NO_START="${LOCADEV_NO_START:-0}"
 OS="$(uname -s)"
@@ -130,6 +129,11 @@ if [ "$NO_START" = "1" ]; then
     echo "${C_G}[OK] Installed to $INSTALL_DIR (start skipped).${C_0}"
 else
     "$INSTALL_DIR/bin/locadev" start
+    # Trust Caddy's local CA so every .localhost site shows a padlock. frankenphp trust talks to
+    # the admin API the server just opened and asks for sudo/password when the store needs it.
+    echo "${C_Y}Trusting the local HTTPS certificate (may ask for your password)...${C_0}"
+    "$INSTALL_DIR/bin/frankenphp" trust \
+        || echo "${C_Y}[NOTE] Certificate not trusted; HTTPS will show 'Not secure'. Retry: $INSTALL_DIR/bin/frankenphp trust${C_0}"
     echo ""
     echo "${C_G}  [OK] Locadev installed and ready!${C_0}"
     echo "  Dashboard: https://localhost"

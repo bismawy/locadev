@@ -836,13 +836,22 @@ function reload_caddy($caddyfile) {
     if (!file_exists($bin)) {
         return ['success' => false, 'error' => 'frankenphp binary not found'];
     }
-    // Run synchronously: `frankenphp reload` signals the running server and exits, so
-    // the exit code is a real answer instead of an unconditional "success".
+    // Adapt first: it parses the Caddyfile without touching the server, so a broken config
+    // still comes back as a real error.
+    $cfg = escapeshellarg($caddyfile);
     $out = [];
     $code = 0;
-    exec(escapeshellarg($bin) . ' reload --config ' . escapeshellarg($caddyfile) . ' 2>&1', $out, $code);
+    exec(escapeshellarg($bin) . ' adapt --config ' . $cfg . ' 2>&1', $out, $code);
     if ($code !== 0) {
         return ['success' => false, 'error' => 'Caddy reload failed: ' . implode(' ', array_slice($out, -2))];
+    }
+    // Detached on purpose: this request is served by the server being reloaded, and Caddy's
+    // config swap waits for in-flight requests, so a synchronous reload deadlocks on itself.
+    $reload = escapeshellarg($bin) . ' reload --config ' . $cfg;
+    if (PHP_OS_FAMILY === 'Windows') {
+        pclose(popen('start "" /B ' . $reload . ' >NUL 2>&1', 'r'));
+    } else {
+        exec($reload . ' >/dev/null 2>&1 &');
     }
     return ['success' => true];
 }
@@ -861,7 +870,10 @@ function get_status_data() {
             $all = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
             $dbCount = count(array_diff($all, SYSTEM_DBS));
             $dbVersion = $pdo->query("SELECT VERSION()")->fetchColumn();
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+            // A server that accepts the connection but fails these queries is not usable.
+            $dbConnected = false;
+        }
     }
 
     // curl is an optional (toggleable) extension: probe the admin API over a socket
@@ -938,6 +950,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($origin = $_SERVER['HTTP_O
         echo json_encode(['success' => false, 'error' => 'Cross-origin request blocked']);
         exit;
     }
+}
+// The fence above only sees POST, and a cross-site <img> sends GET with no Origin check at all,
+// so anything that changes state must arrive as POST. Every UI and CLI caller already does.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' && !in_array($action,
+        ['status', 'sites', 'databases', 'system_info', 'update', 'update_log', 'configuration', 'extensions'], true)) {
+    http_response_code(405);
+    header('Allow: POST');
+    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+    exit;
 }
 
 switch ($action) {
@@ -1072,14 +1093,22 @@ switch ($action) {
         }
 
         // Auto create MariaDB database if requested
+        $dbError = '';
         $cleanDb = preg_replace('#[^a-zA-Z0-9_]#', '', $database);
         if ($createDb && !empty($cleanDb)) {
             $sendEvent('db', 50, 'Creating MariaDB database', "Database: `{$cleanDb}`");
             $pdo = get_pdo();
-            if ($pdo) {
+            if (!$pdo) {
+                $dbError = 'MariaDB offline';
+            } else {
                 try {
                     $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$cleanDb}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-                } catch (Exception $e) {}
+                } catch (Exception $e) {
+                    $dbError = $e->getMessage();
+                }
+            }
+            if ($dbError !== '') {
+                $sendEvent('db', 50, 'Database was not created', $dbError);
             }
         }
 
@@ -1233,6 +1262,7 @@ switch ($action) {
             echo json_encode([
                 'success' => true,
                 'message' => 'Website saved',
+                'db_error' => $dbError,
                 'caddy_reload' => $reloadResult
             ]);
         }
@@ -1363,14 +1393,19 @@ switch ($action) {
         save_sites_json($sitesJson, $filtered);
 
         // Optional drop DB
+        $dbError = '';
         if ($deleteDb && !empty($targetSite['database'])) {
             $pdo = get_pdo();
-            if ($pdo) {
+            if (!$pdo) {
+                $dbError = 'MariaDB offline';
+            } else {
                 $cleanDb = preg_replace('#[^a-zA-Z0-9_]#', '', $targetSite['database']);
                 if (!empty($cleanDb) && !in_array($cleanDb, SYSTEM_DBS, true)) {
                     try {
                         $pdo->exec("DROP DATABASE IF EXISTS `{$cleanDb}`");
-                    } catch (Exception $e) {}
+                    } catch (Exception $e) {
+                        $dbError = $e->getMessage();
+                    }
                 }
             }
         }
@@ -1378,13 +1413,16 @@ switch ($action) {
         $reloadResult = reload_caddy($caddyfile);
 
         if ($isHx) {
-            hx_toast($deleteFolder ? 'Website and folder deleted' : 'Website config removed');
+            hx_toast($dbError !== ''
+                ? 'Website removed, but the database was not dropped: ' . $dbError
+                : ($deleteFolder ? 'Website and folder deleted' : 'Website config removed'), $dbError !== '');
             echo partial_sites($_GET + $_POST);
             exit;
         }
         echo json_encode([
             'success' => true,
             'message' => 'Website deleted',
+            'db_error' => $dbError,
             'caddy_reload' => $reloadResult
         ]);
         break;
