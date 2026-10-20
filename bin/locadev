@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Locadev CLI - portable across Windows (Git Bash), Linux, and macOS.
 # Resolve symlinks (~/.local/bin/locadev -> install dir) so LOCADEV_DIR points
-# at the real install, not the fallback path below.
+# at the real install. No guessed fallback: a wrong dir must fail here, not later.
 SELF="${BASH_SOURCE[0]}"
 command -v readlink >/dev/null 2>&1 && SELF="$(readlink -f "$SELF" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 LOCADEV_DIR="$(cd "$(dirname "$SELF")/.." 2>/dev/null && pwd)"
-[ -f "$LOCADEV_DIR/Caddyfile" ] || LOCADEV_DIR="D:/Locadev"
+[ -f "$LOCADEV_DIR/Caddyfile" ] || { echo "[Locadev] Cannot locate the install dir (no Caddyfile in $LOCADEV_DIR)." >&2; exit 1; }
 command -v cygpath >/dev/null 2>&1 && LOCADEV_DIR=$(cygpath -m "$LOCADEV_DIR")
 
 export PHPRC="$LOCADEV_DIR/bin"
@@ -191,29 +191,38 @@ stop_cmds() {
         "$LOCADEV_DIR/bin/frankenphp" php-cli "$LOCADEV_DIR/scripts/stop-tunnels.php" >/dev/null 2>&1
     fi
     curl -s -X POST http://127.0.0.1:2019/stop >/dev/null 2>&1
-    # wait for graceful shutdown (process gone), force-kill is only a fallback
-    local t=0
-    while tasklist //FI "IMAGENAME eq frankenphp.exe" 2>/dev/null | grep -q frankenphp; do
-        t=$((t + 1)); [ "$t" -ge 6 ] && break
-        sleep 1
-    done
+    # wait for graceful shutdown (process gone), force-kill is only a fallback.
+    # POSIX patterns are scoped to THIS install: a bare frankenphp also matches
+    # frankenphp php-cli update.php, and a bare mariadbd kills the system database.
+    local t=0 fp_pat="bin/frankenphp run" db_pat="--datadir=$LOCADEV_DIR/data/mariadb"
     if [ "$IS_WIN" = 1 ]; then
+        while tasklist //FI "IMAGENAME eq frankenphp.exe" 2>/dev/null | grep -q frankenphp; do
+            t=$((t + 1)); [ "$t" -ge 6 ] && break
+            sleep 1
+        done
         taskkill //F //IM frankenphp.exe >/dev/null 2>&1
     else
-        pkill -f frankenphp 2>/dev/null
+        while pgrep -f -- "$fp_pat" >/dev/null 2>&1; do
+            t=$((t + 1)); [ "$t" -ge 6 ] && break
+            sleep 1
+        done
+        pkill -f -- "$fp_pat" 2>/dev/null
     fi
     "$MARIADB_ADMIN" -h 127.0.0.1 -P 3306 -u root shutdown >/dev/null 2>&1
     # port 3306 closes before InnoDB finishes flushing - wait for the PROCESS, not the port
     t=0
-    while tasklist //FI "IMAGENAME eq $MARIADB_IMAGE" 2>/dev/null | grep -qi "${MARIADB_IMAGE%.exe}"; do
-        t=$((t + 1)); [ "$t" -ge 11 ] && break
-        sleep 1
-    done
     if [ "$IS_WIN" = 1 ]; then
+        while tasklist //FI "IMAGENAME eq $MARIADB_IMAGE" 2>/dev/null | grep -qi "${MARIADB_IMAGE%.exe}"; do
+            t=$((t + 1)); [ "$t" -ge 11 ] && break
+            sleep 1
+        done
         taskkill //F //IM "$MARIADB_IMAGE" >/dev/null 2>&1
     else
-        pkill -f mariadbd 2>/dev/null
-        pkill -f mysqld 2>/dev/null
+        while pgrep -f -- "$db_pat" >/dev/null 2>&1; do
+            t=$((t + 1)); [ "$t" -ge 11 ] && break
+            sleep 1
+        done
+        pkill -f -- "$db_pat" 2>/dev/null
     fi
 }
 

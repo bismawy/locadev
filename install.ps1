@@ -14,7 +14,6 @@ $ErrorActionPreference = 'Stop'
 
 # ---- Config (override via env) ----
 $GhRepo    = if ($env:LOCADEV_GH)     { $env:LOCADEV_GH }     else { "bismawy/locadev" }
-$Version   = if ($env:LOCADEV_VERSION){ $env:LOCADEV_VERSION } else { "latest" }
 $InstallDir= if ($env:LOCADEV_HOME)   { $env:LOCADEV_HOME }   else { "$HOME\Locadev" }
 $NoStart   = ($env:LOCADEV_NO_START -eq "1")
 # Test overrides (file:// or alternate mirrors)
@@ -41,7 +40,6 @@ Write-Host "===================================================" -ForegroundColo
 Write-Host "  Locadev - Just runs. Natively.  (installer)"      -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host "Target : $InstallDir"
-Write-Host "Version: $Version"
 
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
     Write-Host "[ERROR] Locadev Windows binaries are x64-only (detected $($env:PROCESSOR_ARCHITECTURE))." -ForegroundColor Red
@@ -99,6 +97,23 @@ if ($NoStart) {
 } else {
     & "$BinDir\locadev.cmd" start
     Write-Host ""
+    # Caddy writes its local CA on first start. Trusting it in the CurrentUser store needs no
+    # admin rights (Windows asks once) and turns the browser's "Not secure" into a padlock.
+    $RootCrt = "$env:APPDATA/Caddy/pki/authorities/local/root.crt"
+    for ($i = 0; $i -lt 10 -and -not (Test-Path $RootCrt); $i++) { Start-Sleep 1 }
+    if (Test-Path $RootCrt) {
+        $Cert  = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $RootCrt
+        $Store = New-Object System.Security.Cryptography.X509Certificates.X509Store "Root", "CurrentUser"
+        $Store.Open("ReadWrite")
+        if ($Store.Certificates.Find("FindByThumbprint", $Cert.Thumbprint, $false).Count -eq 0) {
+            Write-Host "  Trusting the local HTTPS certificate (confirm the Windows prompt)..." -ForegroundColor Yellow
+            try { $Store.Add($Cert) }
+            catch { Write-Host "  [NOTE] Certificate not trusted ($($_.Exception.Message)); HTTPS will show 'Not secure'." -ForegroundColor Yellow }
+        }
+        $Store.Close()
+    } else {
+        Write-Host "  [NOTE] Local CA not found yet; run 'frankenphp trust' after the first start." -ForegroundColor Yellow
+    }
     Write-Host "  [OK] Locadev installed and ready!" -ForegroundColor Green
     Write-Host "  Dashboard: https://localhost" -ForegroundColor Green
     Write-Host "  CLI:       locadev | locadev menu" -ForegroundColor Green
