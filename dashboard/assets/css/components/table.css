@@ -9,7 +9,7 @@
   background: var(--card);
   box-shadow: var(--shadow-xs);
 }
-/* Sudut membulat dipindah ke sel-sel sudut (pengganti overflow:hidden) */
+/* Rounded corners moved to the corner cells (replaces overflow:hidden) */
 thead th:first-child { border-top-left-radius: calc(var(--radius-lg) - 1px); }
 thead th:last-child { border-top-right-radius: calc(var(--radius-lg) - 1px); }
 tbody tr:last-child td:first-child { border-bottom-left-radius: calc(var(--radius-lg) - 1px); }
@@ -34,7 +34,7 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Kolom aksi: beri ruang napas lebih dari tepi kanan container */
+/* Action column: extra breathing room from the container right edge */
 th:last-child,
 td:last-child {
   padding-right: 1.5rem;
@@ -106,7 +106,7 @@ tr:hover td {
   margin-bottom: 0.75rem;
 }
 
-/* Cloudflare Tunnel: ikon tautan publik (tanpa garis bawah) + tombol toggle aktif */
+/* Cloudflare Tunnel: public link icon (no underline) + active toggle button */
 a.icon-btn {
   text-decoration: none;
 }

@@ -16,7 +16,7 @@
 }
 .search-box .form-input {
   width: 11rem;
-  height: 2.125rem; /* sejajar filter pills (1.625rem + border/padding = 2.125rem) & tombol toolbar */
+  height: 2.125rem; /* aligned with filter pills (1.625rem + border/padding = 2.125rem) & toolbar buttons */
   font-size: 0.75rem;
   padding-left: 2rem;
   box-sizing: border-box;

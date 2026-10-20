@@ -47,7 +47,7 @@
   gap: 0.25rem;
   background: var(--card);
   padding: 0.1875rem;
-  border-radius: 0.5rem; /* outer = pill radius + padding: 0.375rem + 0.1875rem, agar nested radius konsisten */
+  border-radius: 0.5rem; /* outer = pill radius + padding: 0.375rem + 0.1875rem, so nested radii stay consistent */
   border: 1px solid var(--border);
 }
 /* Radio inputs are visually hidden but stay in the DOM so htmx can issue requests */
@@ -63,7 +63,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  height: 1.625rem; /* 26 + 6 padding + 2 border container = 2.125rem — sejajar search & tombol toolbar */
+  height: 1.625rem; /* 26 + 6 padding + 2 border container = 2.125rem — aligned with search & toolbar buttons */
   padding: 0 0.625rem;
   font-size: 0.75rem;
   font-weight: 500;
@@ -114,9 +114,9 @@ html.dark .filter-pills input[type="radio"]:checked + label.pill-btn .pill-count
 }
 
 .search-box .form-input.site-search {
-  width: 13.75rem; /* tinggi/font dari search.css — sejajar pill group */
+  width: 13.75rem; /* height/font from search.css — aligned with pill group */
 }
-/* Semua kontrol toolbar satu tinggi agar baris terlihat rapi */
+/* All toolbar controls share one height so the row looks tidy */
 .unified-toolbar .btn {
   height: var(--header-control-h);
 }

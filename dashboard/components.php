@@ -1,20 +1,20 @@
 <?php
 /**
  * Locadev Dashboard — Reusable component renderers.
- * Markup komponen Arnative dalam SATU tempat: halaman cukup memanggil
- * fungsi ini, styling ada di assets/css/components/<komponen>.css.
- * Blueprint dokumentasi: ~/.pi/agent/skills/arnative-design/components/.
+ * Arnative component markup lives in ONE place: pages only call
+ * these functions; styling lives in assets/css/components/<component>.css.
+ * Documentation blueprint: ~/.pi/agent/skills/arnative-design/components/.
  */
 
-/** Escaper diambil dari partials.php bila sudah termuat. */
+/** Escaper comes from partials.php when it is already loaded. */
 if (!function_exists('e')) {
     require_once __DIR__ . '/partials.php';
 }
 
 /**
  * Switch toggle (instant-apply) — styling: assets/css/components/switch.css.
- * $attrs: atribut tambahan untuk <input> (hx-post, hx-vals, hx-trigger, dst).
- * Komponen switch.css: [components/switch] — markup terkunci di sini.
+ * $attrs: extra attributes for <input> (hx-post, hx-vals, hx-trigger, etc.).
+ * Component switch.css: [components/switch] — markup is locked here.
  */
 function render_switch(bool $checked, string $title, array $attrs = [], array $inputAttrs = []): string {
     $attr = '';
@@ -30,9 +30,9 @@ function render_switch(bool $checked, string $title, array $attrs = [], array $i
 }
 
 /**
- * Search box dengan icon — styling: assets/css/components/search.css.
- * $attrs: atribut untuk wrapper div; $inputAttrs: atribut untuk <input>
- * (name, hx-get + hx-trigger="input changed delay:300ms", hx-include, dst).
+ * Search box with icon — styling: assets/css/components/search.css.
+ * $attrs: attributes for the wrapper div; $inputAttrs: attributes for <input>
+ * (name, hx-get + hx-trigger="input changed delay:300ms", hx-include, etc.).
  */
 function render_search(string $value = '', array $attrs = [], array $inputAttrs = []): string {
     $inputAttr = '';
@@ -48,9 +48,9 @@ function render_search(string $value = '', array $attrs = [], array $inputAttrs 
 /**
  * Custom select dropdown (shadcn-style) — styling: assets/css/components/forms.css
  * (.custom-select / .select-trigger / .select-menu / .select-arrow).
- * data-generic + hidden input menandai instance mandiri: perilaku buka/tutup &
- * pilih opsi via event delegation di app.js (aman untuk konten hasil swap htmx).
- * $labels: label tampilan per value (fallback: value itu sendiri).
+ * data-generic + hidden input mark a standalone instance: open/close and
+ * option picking run via event delegation in app.js (safe for htmx-swapped content).
+ * $labels: display label per value (fallback: the value itself).
  */
 function render_custom_select(string $name, string $current, array $options, array $labels = []): string {
     $menu = '';

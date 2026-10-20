@@ -38,7 +38,7 @@
 .toast.error .msr {
   color: var(--danger);
 }
-/* Toast progres: spinner berputar selama aksinya berjalan */
+/* Progress toast: spinner spins while its action runs */
 .toast.progress .msr {
   color: var(--info);
   animation: spin 0.8s linear infinite;

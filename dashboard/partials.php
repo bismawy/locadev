@@ -313,20 +313,20 @@ function partial_sites(array $params): string {
     return $html;
 }
 
-/** Kontrol Cloudflare Tunnel di kolom Action (satu situs = satu tunnel publik). */
+/** Cloudflare Tunnel control in the Action column (one site = one public tunnel). */
 function render_tunnel_action(string $id, string $name, ?array $tunnel): string {
     $post = ' hx-post="' . e(hx_url('toggle_tunnel')) . '" hx-vals=\'{"id":"' . e($id) . '"}\''
         . ' hx-trigger="click" hx-target="#view" hx-include="#sites-filters" hx-disabled-elt="this"';
 
     if ($tunnel === null) {
-        // Menerbitkan tunnel makan waktu (unduh cloudflared + spawn, bisa >5 detik):
-        // data-progress memicu toast "sedang berjalan" di app.js.
+        // Publishing a tunnel takes time (cloudflared download + spawn, can exceed 5 s):
+        // data-progress triggers the "in progress" toast in app.js.
         return '<button type="button" class="icon-btn"' . $post . ' data-progress="Starting the public tunnel…"'
             . ' title="Publish online via Cloudflare Tunnel" aria-label="Publish ' . e($name) . ' online">'
             . ico('language', 16) . '</button>';
     }
 
-    // Ikon saja (tanpa label terpotong): nama domain publik muncul saat hover.
+    // Icon only (no truncated label): the public domain shows on hover.
     return '<a class="icon-btn tunnel-on" href="' . e($tunnel['url']) . '" target="_blank" rel="noopener"'
         . ' title="' . e($tunnel['url']) . '" aria-label="Open the public URL of ' . e($name) . ' in a new tab">'
         . ico('link_2', 16) . '</a>'
@@ -490,8 +490,8 @@ function partial_system_info(): string {
 
     $sites = load_sites_json($sitesJson, dirname($sitesJson));
 
-    // Versi dibaca dari binernya, bukan dari PHP yang sedang melayani: situs bisa jalan
-    // di biner yang berbeda dari yang melayani dashboard ini.
+    // Versions come from the binary, not the PHP serving this request: sites can run
+    // on a different binary than the one serving this dashboard.
     $rt = runtime_versions();
     $webServer = $rt['frankenphp'] !== ''
         ? 'FrankenPHP ' . $rt['frankenphp'] . ($rt['caddy'] !== '' ? ' — Caddy v' . $rt['caddy'] : '')
@@ -538,8 +538,8 @@ function partial_system_info(): string {
         $rows[] = ['Disk', sprintf('%.1f GB free of %.1f GB', $diskFree / 1e9, $diskTotal / 1e9)];
     }
 
-    // Ringkasan teks polos untuk laporan bug: versinya menempel di data-copy tombol,
-    // jadi tidak perlu elemen tersembunyi kedua yang bisa menyimpang dari tabel.
+    // Plain-text summary for bug reports: the versions ride on the button's data-copy,
+    // so no second hidden element can drift from the table.
     $summary = implode("\n", [
         'Locadev ' . LOCODEV_VERSION,
         PHP_OS_FAMILY . ' — ' . php_uname('s') . ' ' . php_uname('r') . ' (' . php_uname('m') . ')',
@@ -713,7 +713,7 @@ function partial_configuration(): string {
                 array_unshift($opts, $current);
             }
             $labels = $name === 'max_execution_time' ? ['0' => '0 (unlimited)'] : [];
-            // Tandai nilai yang direkomendasikan — label item menu + trigger label
+            // Mark the recommended value — menu item label + trigger label
             if (isset($d['recommended']) && in_array($d['recommended'], $opts, true)) {
                 $labels[$d['recommended']] = ($labels[$d['recommended']] ?? $d['recommended']) . ' (Recommended)';
             }
