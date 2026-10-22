@@ -3,6 +3,16 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.12 — 2026-10-22
+
+Last piece of the launcher fix in 1.4.11.
+
+### The bash CLI repairs `extension_dir` before PHP starts too
+
+1.4.11 fixed this on Windows. `bin/locadev` (Linux, macOS, Git Bash) still started PHP first, so an
+install whose `bin/php.ini` named another install failed the same way there: PHP could not load
+`curl` or `openssl`, and `locadev update` reported "Cannot reach GitHub".
+
 ## v1.4.11 — 2026-10-22
 
 Makes `locadev update` work on a machine that has more than one install.
