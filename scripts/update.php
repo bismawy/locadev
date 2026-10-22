@@ -6,10 +6,17 @@
  *   bin/frankenphp php-cli scripts/update.php --yes     (required without a terminal)
  *   bin/frankenphp php-cli scripts/update.php --check   (JSON: installed / latest / update_available)
  *   bin/frankenphp php-cli scripts/update.php --tag=v1.2.0
+ *   bin/frankenphp php-cli scripts/update.php --no-bin   (thin layer only)
  *
- * Thin layer only: scripts/, dashboard/, config templates, Caddyfile, CLI. Binaries are
- * left alone on purpose - Windows locks bin/php.exe and bin/frankenphp.exe while the server
- * runs, and on Linux replacing bin/frankenphp drops the setcap that lets it bind :443.
+ * Two layers: the thin layer (scripts/, dashboard/, config templates, Caddyfile, CLI) and the
+ * runtime binaries in bin/. Both are refreshed, because this is the single command a user runs to
+ * fix an install. A locked binary (the running server, this updater's own php.exe) is renamed out
+ * of the way first - Windows refuses to overwrite a running image but allows renaming it - so no
+ * stop/start dance is needed; the leftovers are deleted on the next run.
+ *
+ * bin/php.ini is never replaced: it is the install's own config. The bundle's copy carries the
+ * maintainer's absolute extension_dir, which made a second install load another install's DLLs and
+ * die with "Entry Point Not Found". locadev_fix_extension_dir() repoints it at this install.
  *
  * User data is protected by an explicit skip list, NOT by a tar --exclude pattern: the
  * release archive names its entries locadev-main/sites/..., so install.sh's --exclude="sites/*"
@@ -222,6 +229,165 @@ function locadev_extract(string $tgz, string $dir): string {
     return '';
 }
 
+/** Where the last binary sync came from: the tag the bundle was downloaded for. */
+function locadev_bin_marker_path(string $root): string {
+    return $root . '/data/bin.json';
+}
+
+function locadev_bin_marker(string $root): array {
+    $j = json_decode((string) @file_get_contents(locadev_bin_marker_path($root)), true);
+    return is_array($j) ? $j : [];
+}
+
+/**
+ * Copy one file over another, renaming a locked target out of the way first.
+ *
+ * Windows refuses to overwrite a running image - the server's frankenphp.exe, this updater's own
+ * php.exe, a mapped php8ts.dll - but it does allow renaming it, so the new file lands and the old
+ * one is deleted by a later run, once nothing maps it any more.
+ */
+function locadev_put_file(string $from, string $to, array &$stale): bool {
+    if (@copy($from, $to)) {
+        return true;
+    }
+    $old = $to . '.old';
+    @unlink($old);
+    if (!@rename($to, $old)) {
+        return false;
+    }
+    $stale[] = $old;
+    return @copy($from, $to);
+}
+
+/** Copy a binary bundle over bin/. Never replaces bin/php.ini (the install's own config). */
+function locadev_copy_bin(string $src, string $dst, array &$stale, string $rel = ''): int {
+    $written = 0;
+    foreach (scandir($src) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $from = $src . '/' . $name;
+        $to = $dst . '/' . $name;
+        if ($rel === '' && $name === 'php.ini') {
+            continue;
+        }
+        if (is_dir($from)) {
+            is_dir($to) || @mkdir($to, 0777, true);
+            $written += locadev_copy_bin($from, $to, $stale, $rel === '' ? $name : $rel . '/' . $name);
+            continue;
+        }
+        if (!is_dir($to) && locadev_put_file($from, $to, $stale)) {
+            $written++;
+        }
+    }
+    return $written;
+}
+
+/** FrankenPHP asset name upstream publishes for this platform, '' when there is none. */
+function locadev_frankenphp_asset(): string {
+    $arch = strtolower((string) php_uname('m'));
+    $arm = str_contains($arch, 'arm64') || str_contains($arch, 'aarch64');
+    return match (PHP_OS_FAMILY) {
+        'Linux' => $arm ? 'frankenphp-linux-aarch64' : 'frankenphp-linux-x86_64',
+        // 1.13.2 dropped Intel macOS static builds; upstream only publishes Apple Silicon now.
+        'Darwin' => $arm ? 'frankenphp-mac-arm64' : '',
+        default => '',
+    };
+}
+
+/**
+ * Refresh the runtime in bin/ from the release bundle. Returns files written plus a note when a
+ * step could not run (the caller prints it; a failed binary sync must never look like success).
+ */
+function locadev_sync_binaries(string $root, string $tag, string $tmp, array &$stale): array {
+    $stats = ['written' => 0, 'note' => ''];
+    $bin = $root . '/bin';
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        if (!class_exists('ZipArchive')) {
+            $stats['note'] = 'ext/zip is not loaded - binaries were not updated.';
+            return $stats;
+        }
+        $zip = $tmp . '/bin.zip';
+        $url = 'https://github.com/' . LOCADEV_REPO . '/releases/download/' . $tag . '/locadev-bin-win-x64.zip';
+        if (!locadev_download($url, $zip)) {
+            $stats['note'] = 'Binary bundle download failed: ' . $url;
+            return $stats;
+        }
+        $z = new ZipArchive();
+        if ($z->open($zip) !== true) {
+            $stats['note'] = 'Binary bundle could not be opened: ' . $zip;
+            return $stats;
+        }
+        $dir = $tmp . '/binnew';
+        @mkdir($dir, 0777, true);
+        $z->extractTo($dir);
+        $z->close();
+        $stats['written'] = locadev_copy_bin($dir, $bin, $stale);
+        return $stats;
+    }
+
+    // Linux/macOS ship no bundle: install.sh downloads the upstream FrankenPHP binary the same way.
+    $asset = locadev_frankenphp_asset();
+    if ($asset === '') {
+        $stats['note'] = 'No upstream FrankenPHP build for this platform - binaries were not updated.';
+        return $stats;
+    }
+    $url = 'https://github.com/dunglas/frankenphp/releases/latest/download/' . $asset;
+    $new = $bin . '/frankenphp.new';
+    if (!locadev_download($url, $new)) {
+        $stats['note'] = 'FrankenPHP download failed: ' . $url;
+        return $stats;
+    }
+    @chmod($new, 0755);
+    // rename(2) succeeds even while the old binary is mapped, so no restart is needed here either.
+    if (!@rename($new, $bin . '/frankenphp')) {
+        $stats['note'] = 'Could not replace bin/frankenphp.';
+        return $stats;
+    }
+    $stats['written'] = 1;
+    // Replacing the file drops the capability that lets it bind :443; only root can set it again.
+    if (PHP_OS_FAMILY === 'Linux' && function_exists('posix_geteuid') && posix_geteuid() === 0) {
+        exec('setcap cap_net_bind_service=+ep ' . escapeshellarg($bin . '/frankenphp') . ' 2>&1');
+    } else {
+        $stats['note'] = 'If :443 stops working, run: sudo setcap cap_net_bind_service=+ep "' . $bin . '/frankenphp"';
+    }
+    return $stats;
+}
+
+/**
+ * The shipped php.ini names the maintainer's own extension_dir, so an install that did not replace
+ * it loads another install's DLLs: PHP refuses with "Entry Point Not Found" and every extension
+ * (curl, openssl, gd) fails to load. Repoint it whenever it names a different directory.
+ */
+function locadev_fix_extension_dir(string $root): bool {
+    $ini = $root . '/bin/php.ini';
+    $ext = str_replace('\\', '/', $root . '/bin/ext');
+    if (!is_file($ini) || !is_dir($ext)) {
+        return false;
+    }
+    $text = (string) file_get_contents($ini);
+    if (!preg_match('/^extension_dir\s*=\s*"?([^"\r\n]*)"?\s*$/m', $text, $m)) {
+        return false;
+    }
+    if (rtrim(str_replace('\\', '/', trim($m[1])), '/') === $ext) {
+        return false;
+    }
+    return @file_put_contents($ini, preg_replace('/^extension_dir\s*=.*$/m', 'extension_dir = "' . $ext . '"', $text, 1)) !== false;
+}
+
+/** Whether locadev_fix_extension_dir() has work to do, without writing anything. */
+function locadev_ini_needs_fix(string $root): bool {
+    $ini = $root . '/bin/php.ini';
+    $ext = str_replace('\\', '/', $root . '/bin/ext');
+    if (!is_file($ini) || !is_dir($ext)) {
+        return false;
+    }
+    $text = (string) file_get_contents($ini);
+    return preg_match('/^extension_dir\s*=\s*"?([^"\r\n]*)"?\s*$/m', $text, $m) === 1
+        && rtrim(str_replace('\\', '/', trim($m[1])), '/') !== $ext;
+}
+
 function locadev_check_json(string $root): array {
     $installed = locadev_version($root);
     $latest = locadev_latest_tag();
@@ -260,9 +426,16 @@ function locadev_update_main(array $argv): int {
     }
     $target = $tag !== '' ? $tag : $latest;
 
+    // `locadev update` is the one command a user runs to repair an install, so it refreshes the
+    // runtime in bin/ as well as the thin layer. Binaries are skipped once they already came from
+    // this tag (recorded in data/bin.json): they are 148 MB on Windows.
+    $with_bin = !in_array('--no-bin', $argv, true);
+    $bin_due = $with_bin && (locadev_bin_marker($root)['tag'] ?? '') !== $target;
+    $ini_fix = $with_bin && locadev_ini_needs_fix($root);
+
     // An explicit --tag still forces the copy: that is the documented escape hatch for pinning a
     // version or re-syncing an install that a killed update left half-written.
-    if ($tag === '' && locadev_up_to_date($installed, $target)) {
+    if ($tag === '' && locadev_up_to_date($installed, $target) && !$bin_due && !$ini_fix) {
         echo "[update] Already on {$target}. Nothing to do.\n";
         return 0;
     }
@@ -274,7 +447,7 @@ function locadev_update_main(array $argv): int {
             echo "[update] No terminal to ask on. Re-run with --yes to confirm.\n";
             return 1;
         }
-        echo "[update] Update the thin layer (scripts, dashboard, CLI, config templates)?\n";
+        echo "[update] Update $target (scripts, dashboard, CLI and the runtime binaries)?\n";
         echo '[update] data/, sites/ and your site registry are not touched. [y/N] ';
         $answer = strtolower(trim((string) fgets(STDIN)));
         if ($answer !== 'y' && $answer !== 'yes') {
@@ -299,38 +472,79 @@ function locadev_update_main(array $argv): int {
     // >1h sweep used to be the only cleanup - which never ran on Windows (see locadev_rm_tree).
     register_shutdown_function(static fn() => locadev_rm_tree($tmp));
 
-    $url = 'https://github.com/' . LOCADEV_REPO . '/releases/download/' . $target . '/locadev-repo.tar.gz';
-    echo '[update] Downloading ' . $url . "\n";
-    if (!locadev_download($url, $tmp . '/repo.tar.gz')) {
-        echo "[update] Download failed. Check the connection (and that the release exists).\n";
-        return 1;
+    // Leftovers from a previous run whose files were mapped at the time. Best effort: a still
+    // mapped image cannot be deleted and simply survives to the next run.
+    foreach (glob($root . '/bin/*.old') ?: [] as $old) {
+        @unlink($old);
     }
 
-    echo "[update] Extracting...\n";
-    if ($err = locadev_extract($tmp . '/repo.tar.gz', $tmp . '/x')) {
-        echo '[update] Extraction failed: ' . $err . "\n";
-        return 1;
+    $stale = [];
+    $failed = false;
+    if (locadev_up_to_date($installed, $target) && $tag === '') {
+        echo "[update] Code already on {$target} - checking the runtime binaries.\n";
+    } else {
+        $url = 'https://github.com/' . LOCADEV_REPO . '/releases/download/' . $target . '/locadev-repo.tar.gz';
+        echo '[update] Downloading ' . $url . "\n";
+        if (!locadev_download($url, $tmp . '/repo.tar.gz')) {
+            echo "[update] Download failed. Check the connection (and that the release exists).\n";
+            return 1;
+        }
+
+        echo "[update] Extracting...\n";
+        if ($err = locadev_extract($tmp . '/repo.tar.gz', $tmp . '/x')) {
+            echo '[update] Extraction failed: ' . $err . "\n";
+            return 1;
+        }
+
+        // git archive wraps everything in <repo>-<ref>/ - use the single top-level directory.
+        $dirs = array_values(array_filter(scandir($tmp . '/x') ?: [], fn($n) => $n !== '.' && $n !== '..' && is_dir($tmp . '/x/' . $n)));
+        if (count($dirs) !== 1) {
+            echo "[update] Unexpected archive layout (expected one top-level directory).\n";
+            return 1;
+        }
+
+        echo "[update] Copying over {$root}...\n";
+        $stats = locadev_copy_tree($tmp . '/x/' . $dirs[0], $root, locadev_update_skips());
+        echo '[update] ' . $stats['written'] . ' file(s) written';
+        echo $stats['skipped'] ? ', skipped: ' . implode(', ', array_unique($stats['skipped'])) : '';
+        echo "\n";
+
+        $now = locadev_version($root);
+        if ($now !== locadev_version_clean($target)) {
+            echo '[update] WARNING: version reads ' . ($now !== '' ? $now : 'unreadable') . ' after copying ' . $target . '. Update may be partial.' . "\n";
+            return 1;
+        }
     }
 
-    // git archive wraps everything in <repo>-<ref>/ - use the single top-level directory.
-    $dirs = array_values(array_filter(scandir($tmp . '/x') ?: [], fn($n) => $n !== '.' && $n !== '..' && is_dir($tmp . '/x/' . $n)));
-    if (count($dirs) !== 1) {
-        echo "[update] Unexpected archive layout (expected one top-level directory).\n";
-        return 1;
+    if ($bin_due) {
+        echo "[update] Refreshing the runtime binaries...\n";
+        $bin = locadev_sync_binaries($root, $target, $tmp, $stale);
+        if ($bin['written'] > 0) {
+            @mkdir($root . '/data', 0777, true);
+            @file_put_contents(locadev_bin_marker_path($root), json_encode(['tag' => $target, 'files' => $bin['written'], 'at' => gmdate('c')]));
+            echo '[update] ' . $bin['written'] . " binary file(s) written\n";
+        } else {
+            $failed = true;
+        }
+        if ($bin['note'] !== '') {
+            echo '[update] NOTE: ' . $bin['note'] . "\n";
+        }
     }
 
-    echo "[update] Copying over {$root}...\n";
-    $stats = locadev_copy_tree($tmp . '/x/' . $dirs[0], $root, locadev_update_skips());
-    echo '[update] ' . $stats['written'] . ' file(s) written';
-    echo $stats['skipped'] ? ', skipped: ' . implode(', ', array_unique($stats['skipped'])) : '';
-    echo "\n";
+    // Never fatal: an install whose php.ini is fine must still finish the update.
+    if (locadev_fix_extension_dir($root)) {
+        echo "[update] Repointed bin/php.ini extension_dir at this install (it named another install).\n";
+    }
+
+    foreach ($stale as $old) {
+        @unlink($old);
+    }
 
     $now = locadev_version($root);
-    if ($now !== locadev_version_clean($target)) {
-        echo '[update] WARNING: version reads ' . ($now !== '' ? $now : 'unreadable') . ' after copying ' . $target . '. Update may be partial.' . "\n";
+    if ($failed) {
+        echo "[update] Thin layer is on {$now}, but the binaries were NOT updated - see the note above.\n";
         return 1;
     }
-
     echo "[update] Done - now on {$now}. Restart to serve it: locadev restart\n";
     return 0;
 }

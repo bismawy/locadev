@@ -269,15 +269,21 @@ INI
 }
 
 ensure_php_ini() {
-    # The bundled php.ini points extension_dir at another install (the shipped path, or a
-    # Windows path on a shared dual-boot drive). Repoint it only when that path is gone,
-    # so a working custom ini is never clobbered - and only when we have an ext/ to use.
+    # The bundled php.ini names the maintainer's absolute extension_dir, so a second install (or a
+    # moved one) loaded another install's DLLs and PHP died with "Entry Point Not Found" - before
+    # any of this code could run. Repoint it at THIS install whenever it names a foreign bin/ext;
+    # a custom extension dir of your own is left alone.
     local ini="$LOCADEV_DIR/bin/php.ini" ext="$LOCADEV_DIR/bin/ext" cur want
     [ -f "$ini" ] && [ -d "$ext" ] || return 0
-    cur=$(sed -n 's/^extension_dir[[:space:]]*=[[:space:]]*"\?\([^"]*\)"\?[[:space:]]*$/\1/p' "$ini" | head -n1)
-    [ -n "$cur" ] && [ -d "$cur" ] && return 0
     want="extension_dir = \"$ext\""
     grep -qxF "$want" "$ini" && return 0
+    cur=$(sed -n 's/^extension_dir[[:space:]]*=[[:space:]]*"\?\([^"]*\)"\?[[:space:]]*$/\1/p' "$ini" | head -n1)
+    # */bin/ext is some Locadev install's directory (ours was already handled); anything else that
+    # exists is the user's own and must not be touched.
+    case "$cur" in
+        */bin/ext|*/bin/ext/) ;;
+        *) [ -n "$cur" ] && [ -d "$cur" ] && return 0 ;;
+    esac
     echo "${C_YELLOW}[Locadev] Pointing php.ini extension_dir at this install...${C_RESET}"
     sed -i.bak "s|^extension_dir = .*|$want|" "$ini" && rm -f "$ini.bak"
 }

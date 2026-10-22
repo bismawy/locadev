@@ -300,13 +300,15 @@ if "%DB_FRESH%"=="1" (
 goto :eof
 
 :ensure_php_ini
-rem The bundled php.ini points extension_dir at another install. Repoint it at THIS one,
-rem but only when that configured path is gone (never clobber a working custom ini).
+rem The bundled php.ini names the maintainer's absolute extension_dir, so a second install (or a
+rem moved one) loaded another install's DLLs and PHP died with "Entry Point Not Found" - before
+rem any of this code could run. Repoint it at THIS install whenever it names a foreign bin\ext;
+rem a custom extension dir of your own is left alone.
 set "PHP_INI=%LOCADEV_DIR%\bin\php.ini"
 if not exist "%PHP_INI%" goto :eof
 if not exist "%LOCADEV_DIR%\bin\ext" goto :eof
 set "LOCADEV_DIR_FWD=%LOCADEV_DIR:\=/%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$q=[char]34; $p='%PHP_INI%'; $d='%LOCADEV_DIR_FWD%/bin/ext'; if (-not (Test-Path $d)) { exit }; $t=[IO.File]::ReadAllText($p); $m=[regex]::Match($t, '(?m)^extension_dir\s*=\s*' + $q + '?([^' + $q + '\r\n]*)'); if ($m.Success -and -not (Test-Path $m.Groups[1].Value)) { [IO.File]::WriteAllText($p, ($t -replace '(?m)^extension_dir = .*', ('extension_dir = ' + $q + $d + $q))) }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$q=[char]34; $p='%PHP_INI%'; $d='%LOCADEV_DIR_FWD%/bin/ext'; if (-not (Test-Path $d)) { exit }; $t=[IO.File]::ReadAllText($p); $m=[regex]::Match($t, '(?m)^extension_dir\s*=\s*' + $q + '?([^' + $q + '\r\n]*)'); if (-not $m.Success) { exit }; $c=$m.Groups[1].Value.Trim(); if ($c -eq $d) { exit }; if ((Test-Path $c) -and ($c -notmatch '[/\\]bin[/\\]ext[/\\]?$')) { exit }; [IO.File]::WriteAllText($p, ($t -replace '(?m)^extension_dir = .*', ('extension_dir = ' + $q + $d + $q)))" >nul 2>&1
 goto :eof
 
 :banner
