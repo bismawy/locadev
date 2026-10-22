@@ -3,6 +3,17 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.9 — 2026-10-22
+
+Fixes the binary refresh added in 1.4.8, which could not finish.
+
+### `locadev update` no longer runs out of memory
+
+The 148 MB Windows binary bundle was read with `file_get_contents()`, so PHP held the body and its
+copy at once and died on the 256 MB limit mid-update — after the thin layer had already been
+copied. Downloads now stream straight to disk. Verified against the real v1.4.8 bundle with the
+default `memory_limit`: 664 files written, `bin/php.ini` preserved.
+
 ## v1.4.8 — 2026-10-22
 
 One command now repairs an install, not just its scripts.
