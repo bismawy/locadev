@@ -1,10 +1,19 @@
 @echo off
 setlocal
 
-rem Locadev install root (normalized: strips the trailing \bin\..)
+rem Locadev install root (normalized: strips the trailing \bin\..). The updater runs from a copy
+rem in %TEMP% - a .cmd cannot rewrite itself while cmd is reading it - so the real root arrives in
+rem LOCADEV_PARENT_DIR. That has to be resolved HERE, before PHPRC, PATH and the version are
+rem derived from it: deriving them first made the updater run THIS install's php.exe against
+rem ANOTHER install's php.ini, which is the "Entry Point Not Found" popup (and, because curl and
+rem openssl are among the extensions that fail to load, a bogus "Cannot reach GitHub").
+rem No guessed fallback paths: a stray copy must fail here, not update a different install.
 for %%i in ("%~dp0..") do set "LOCADEV_DIR=%%~fi"
-if not exist "%LOCADEV_DIR%\Caddyfile" if exist "D:\Locadev\Caddyfile" set "LOCADEV_DIR=D:\Locadev"
-if not exist "%LOCADEV_DIR%\Caddyfile" if exist "%USERPROFILE%\Locadev\Caddyfile" set "LOCADEV_DIR=%USERPROFILE%\Locadev"
+if defined LOCADEV_PARENT_DIR set "LOCADEV_DIR=%LOCADEV_PARENT_DIR%"
+if not exist "%LOCADEV_DIR%\Caddyfile" (
+    echo [Locadev] Cannot locate the install dir - no Caddyfile in "%LOCADEV_DIR%".
+    exit /b 1
+)
 
 rem Path of THIS script. Windows keeps READING a .cmd while it runs, so the updater must never
 rem rewrite the file it is executing - see :do_update.
@@ -101,12 +110,16 @@ rem cannot find the path specified." and then falls into unrelated labels (db-ex
 rem own once). The update therefore runs from a copy in %TEMP%, and that copy re-enters this
 rem label with LOCADEV_PARENT_DIR set.
 if not defined LOCADEV_PARENT_DIR goto do_update_external
-set "LOCADEV_DIR=%LOCADEV_PARENT_DIR%"
 if not exist "%LOCADEV_DIR%\bin\php.exe" (
     echo %C_RED%[Locadev] No bundled PHP found - cannot update.%C_RESET%
     goto :eof
 )
 call :banner
+rem Before PHP is started, not after: a php.ini left pointing at another install makes the very
+rem process that would repair it die on "Entry Point Not Found" - and with it the download, since
+rem curl and openssl are the extensions that fail to load. The update then failed with
+rem "Cannot reach GitHub", which looked like a network problem.
+call :ensure_php_ini
 "%LOCADEV_DIR%\bin\php.exe" "%LOCADEV_DIR%\scripts\update.php" %2 %3 %4
 rem The copy stays in %TEMP% on purpose. A batch cannot delete itself: cmd keeps reading it after
 rem the delete and reports "The batch file cannot be found." (tried both as a bare line and joined
