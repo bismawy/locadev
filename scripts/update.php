@@ -184,14 +184,30 @@ function locadev_copy_tree(string $src, string $dst, array $skip): array {
     return $stats;
 }
 
+/**
+ * Stream a URL to a file. Never file_get_contents(): the Windows binary bundle is 148 MB, and
+ * holding the body plus its copy in memory blew the 256 MB limit mid-update, leaving an install
+ * with the thin layer copied and the binaries untouched.
+ */
 function locadev_download(string $url, string $dest): bool {
     $ctx = stream_context_create(['http' => [
         'timeout' => 120,
         'follow_location' => 1,
         'user_agent' => 'Locadev-updater',
     ]]);
-    $body = @file_get_contents($url, false, $ctx);
-    return $body !== false && $body !== '' && @file_put_contents($dest, $body) !== false;
+    $in = @fopen($url, 'rb', false, $ctx);
+    if (!$in) {
+        return false;
+    }
+    $out = @fopen($dest, 'wb');
+    if (!$out) {
+        fclose($in);
+        return false;
+    }
+    $bytes = stream_copy_to_stream($in, $out);
+    fclose($in);
+    fclose($out);
+    return $bytes !== false && $bytes > 0;
 }
 
 /**
