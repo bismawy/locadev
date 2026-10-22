@@ -3,6 +3,29 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.8 — 2026-10-22
+
+One command now repairs an install, not just its scripts.
+
+### `locadev update` refreshes the runtime binaries too
+
+It used to copy the thin layer only, so a stale FrankenPHP or PHP could only be fixed by re-running
+the installer. It now syncs `bin/` from the release bundle as well — the bundle on Windows, the
+upstream FrankenPHP binary on Linux/macOS. A file that is in use (the running server, the updater's
+own `php.exe`, a mapped DLL) is renamed out of the way first, so the update no longer needs the
+server stopped; the leftovers are deleted on the next run. `bin/php.ini` is never replaced, and the
+new sync is recorded in `data/bin.json` so the 148 MB Windows bundle downloads once per release
+rather than on every run. `locadev update --no-bin` keeps the old thin-layer-only behaviour.
+
+### "Entry Point Not Found" no longer survives a second install
+
+The shipped `bin/php.ini` carried the maintainer's absolute `extension_dir`. An install that kept it
+loaded another install's extension DLLs and PHP refused to start — `smart_str_ferealloc@@24` in
+`php_curl.dll`, `_safe_femalloc@@24` in `php_exif.dll` — before Locadev code could run, so no command
+could fix it. `extension_dir` is now repointed at this install whenever it names a foreign
+`*/bin/ext`, both by `locadev update` and by the launcher at start; a custom extension directory of
+your own is left untouched.
+
 ## v1.4.7 — 2026-10-22
 
 Security and runtime binary upgrades, plus dashboard runtime version parsing fix.
