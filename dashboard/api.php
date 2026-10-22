@@ -8,7 +8,7 @@
  *  - HTML partial (HTMX: HX-Request header or ?partial=1): fragments for the dashboard UI
  */
 
-define('LOCODEV_VERSION', '1.4.10');
+define('LOCODEV_VERSION', '1.4.11');
 
 /**
  * AdminNeo is mirrored on Locadev's own releases: upstream ships no asset and no adminneo.php in
