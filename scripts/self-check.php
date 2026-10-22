@@ -462,6 +462,27 @@ check('binary sync replaces files, keeps php.ini, and never fails on a locked fi
     return $ok && !is_dir($base);
 })());
 
+// The Windows binary bundle is 148 MB. Buffering it with file_get_contents() blew the 256 MB
+// memory_limit mid-update: the thin layer was copied, the binaries never were.
+check('download streams to disk instead of buffering the whole body', (function (): bool {
+    require_once dirname(__DIR__) . '/scripts/update.php';
+
+    $base = sys_get_temp_dir() . '/locadev-selfcheck-dl-' . getmypid();
+    locadev_rm_tree($base);
+    @mkdir($base, 0777, true);
+    $src = $base . '/src.bin';
+    $dst = $base . '/dst.bin';
+    $payload = str_repeat('locadev', 50000);
+    file_put_contents($src, $payload);
+
+    $ok = locadev_download('file://' . str_replace('\\', '/', $src), $dst)
+        && filesize($dst) === strlen($payload)
+        && md5_file($dst) === md5($payload);
+
+    locadev_rm_tree($base);
+    return $ok && !is_dir($base);
+})());
+
 ob_end_flush();
 echo $fail === 0 ? "\nALL CHECKS PASSED\n" : "\n$fail CHECK(S) FAILED\n";
 exit($fail === 0 ? 0 : 1);
