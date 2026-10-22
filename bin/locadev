@@ -301,6 +301,10 @@ body_update() {
     # scripts/update.php is the engine shared with the dashboard button: same thin-layer
     # rules, so data/, sites/ and the site registry are never touched. Extra args pass
     # through: locadev update --check | --yes | --tag=v1.2.0
+    # Before PHP starts, not after: a php.ini left pointing at another install kills the process
+    # that would repair it ("Entry Point Not Found"), and with it the download - curl and openssl
+    # are among the extensions that fail to load.
+    ensure_php_ini
     if [ -f "$LOCADEV_DIR/bin/php.exe" ]; then
         PHPRC="$LOCADEV_DIR/bin" "$LOCADEV_DIR/bin/php.exe" "$LOCADEV_DIR/scripts/update.php" "${@:1}"
     elif [ -x "$LOCADEV_DIR/bin/frankenphp" ]; then
