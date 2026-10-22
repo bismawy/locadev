@@ -3,6 +3,31 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.11 — 2026-10-22
+
+Makes `locadev update` work on a machine that has more than one install.
+
+### The launcher resolves the install root first
+
+`bin/locadev.cmd` derived `PHPRC`, `PATH` and the version from `LOCADEV_DIR` at the top of the file,
+but the updater runs from a copy in `%TEMP%` and only corrected `LOCADEV_DIR` further down. The copy
+therefore ran one install's `php.exe` against another install's `php.ini`:
+
+```
+Warning: PHP Startup: Unable to load dynamic library 'curl' (tried: D:/Locadev/bin/ext\curl ...)
+[update] Cannot reach GitHub to read the newest release. Nothing changed.
+```
+
+Because `curl` and `openssl` are among the extensions that fail to load, that surfaced as a network
+error — and on a second install, as the `Entry Point Not Found` popup. The root is now resolved before
+anything is derived from it.
+
+### No hardcoded install paths
+
+The maintainer's own `D:\Locadev` and `%USERPROFILE%\Locadev` were fallbacks in a file that ships to
+every user, and they are what pointed the updater at the wrong install. Removed: a stray copy now
+fails with `Cannot locate the install dir - no Caddyfile in "…"` instead of updating another install.
+
 ## v1.4.10 — 2026-10-22
 
 Cleanup fix for the binary refresh.
