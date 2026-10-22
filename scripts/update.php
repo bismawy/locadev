@@ -434,6 +434,13 @@ function locadev_update_main(array $argv): int {
     file_put_contents(locadev_lock_path($root), (string) getmypid());
     register_shutdown_function(static fn() => @unlink(locadev_lock_path($root)));
 
+    // Leftovers from a run whose binaries were mapped at the time. Best effort: a still mapped
+    // image cannot be deleted and simply survives. Swept before every early exit below, because
+    // "Nothing to do" is exactly the run that would otherwise leave them forever.
+    foreach (glob($root . '/bin/*.old') ?: [] as $old) {
+        @unlink($old);
+    }
+
     $installed = locadev_version($root);
     $latest = locadev_latest_tag();
     if ($latest === '' && $tag === '') {
@@ -487,12 +494,6 @@ function locadev_update_main(array $argv): int {
     // Removed on the way out whatever happens. Every failure path below returns early, and the
     // >1h sweep used to be the only cleanup - which never ran on Windows (see locadev_rm_tree).
     register_shutdown_function(static fn() => locadev_rm_tree($tmp));
-
-    // Leftovers from a previous run whose files were mapped at the time. Best effort: a still
-    // mapped image cannot be deleted and simply survives to the next run.
-    foreach (glob($root . '/bin/*.old') ?: [] as $old) {
-        @unlink($old);
-    }
 
     $stale = [];
     $failed = false;
