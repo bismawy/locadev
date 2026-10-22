@@ -3,6 +3,18 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.10 — 2026-10-22
+
+Cleanup fix for the binary refresh.
+
+### No more 90 MB of stale copies in `bin/`
+
+A binary that was in use is renamed to `.old` and deleted at the end of the run, but the updater's
+own mapped files (`php.exe`, `php8ts.dll`, the ICU and OpenSSL DLLs) cannot be deleted while it runs.
+The sweep that removes them sat after the "Nothing to do" exits, so an install that stayed on one
+release kept them: 13 files, ~90 MB, after a single sync. It now runs immediately after the update
+lock, on every run including the no-op ones.
+
 ## v1.4.9 — 2026-10-22
 
 Fixes the binary refresh added in 1.4.8, which could not finish.
