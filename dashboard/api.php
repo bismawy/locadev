@@ -455,7 +455,7 @@ function runtime_versions(): array {
             // v1.12.7, not 1.12.7: without the optional 'v' the version stayed empty and System
             // Info fell back to the SAPI name. self-check's runtime_versions check caught this.
             'frankenphp' => '/FrankenPHP\s+v?([0-9][0-9.]*)/i',
-            'php' => '/PHP\s+([0-9][0-9.]*)/',
+            'php' => '/\bPHP\s+([0-9][0-9.]*)/',
             'caddy' => '/Caddy\s+v?([0-9][0-9.]*)/i',
         ];
         foreach ($patterns as $key => $re) {
