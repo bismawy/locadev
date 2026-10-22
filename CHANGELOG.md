@@ -3,6 +3,19 @@
 Locadev ships as a thin repo plus a per-platform binary bundle, so a release is the tag that
 carries both. Entries are grouped by what a user notices, not by commit.
 
+## v1.4.7 — 2026-10-22
+
+Security and runtime binary upgrades, plus dashboard runtime version parsing fix.
+
+### FrankenPHP v1.13.2 / PHP 8.5.12 security upgrade
+- Bundles upstream FrankenPHP v1.13.2 security release.
+- Fixes PHP2Shell critical vulnerabilities (CVE-2026-109618 and CVE-2026-109619) with PHP 8.5.12.
+- Patches temp directory isolation (GHSA-6q3j-62j9-f9hh), connection drops for queued worker requests, and cyclic array conversion crashes.
+- Bundles Caddy v2.11.7.
+
+### Dashboard runtime version parsing
+- Uses a word boundary `/\bPHP\s+.../` when parsing runtime versions from the binary output to prevent `FrankenPHP` from overriding the PHP version.
+
 ## v1.4.6 — 2026-10-20
 
 Fixes for problems that made a working install look broken. No new features, no data changes:
