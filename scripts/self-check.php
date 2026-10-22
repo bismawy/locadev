@@ -406,6 +406,62 @@ check('extract reads a release tarball without shelling out to tar', (function (
     return $ok && !is_dir($out);
 })());
 
+// The shipped bin/php.ini carries the maintainer's absolute extension_dir, so an install that kept
+// it loaded ANOTHER install's DLLs: PHP died with "Entry Point Not Found" (smart_str_ferealloc@@24
+// in php_curl.dll) on every command, which is unfixable from the code that was being loaded.
+check('extension_dir is repointed at this install and a correct one is left alone', (function (): bool {
+    require_once dirname(__DIR__) . '/scripts/update.php';
+
+    $base = sys_get_temp_dir() . '/locadev-selfcheck-ini-' . getmypid();
+    locadev_rm_tree($base);
+    @mkdir($base . '/bin/ext', 0777, true);
+    $ini = $base . '/bin/php.ini';
+    $ext = str_replace('\\', '/', $base . '/bin/ext');
+    $line = static fn(): string => (string) (preg_match('/^extension_dir\s*=.*$/m', (string) file_get_contents($ini), $m) ? $m[0] : '');
+
+    file_put_contents($ini, "; php.ini\nextension_dir = \"D:/Locadev/bin/ext\"\nmemory_limit = 512M\n");
+    $needed = locadev_ini_needs_fix($base);
+    $fixed = locadev_fix_extension_dir($base);
+    $ok = $needed && $fixed && $line() === 'extension_dir = "' . $ext . '"';
+    $ok = $ok && str_contains((string) file_get_contents($ini), 'memory_limit = 512M');
+
+    // A second run must be a no-op: the update says "Nothing to do", so this predicate decides it.
+    $ok = $ok && !locadev_ini_needs_fix($base) && !locadev_fix_extension_dir($base) && $line() === 'extension_dir = "' . $ext . '"';
+
+    locadev_rm_tree($base);
+    return $ok && !is_dir($base);
+})());
+
+// A locked binary is renamed out of the way instead of failing the whole update; bin/php.ini is
+// the install's own config and must never be taken from the bundle.
+check('binary sync replaces files, keeps php.ini, and never fails on a locked file', (function (): bool {
+    require_once dirname(__DIR__) . '/scripts/update.php';
+
+    $base = sys_get_temp_dir() . '/locadev-selfcheck-bin-' . getmypid();
+    locadev_rm_tree($base);
+    @mkdir($base . '/new/ext', 0777, true);
+    @mkdir($base . '/bin', 0777, true);
+    file_put_contents($base . '/new/php.ini', 'extension_dir = "D:/Locadev/bin/ext"');
+    file_put_contents($base . '/new/php.exe', 'new-php');
+    file_put_contents($base . '/new/ext/php_gd.dll', 'new-gd');
+    file_put_contents($base . '/bin/php.ini', 'extension_dir = "C:/mine/bin/ext"');
+
+    $stale = [];
+    $written = locadev_copy_bin($base . '/new', $base . '/bin', $stale);
+
+    $ok = $written === 2
+        && file_get_contents($base . '/bin/php.exe') === 'new-php'
+        && file_get_contents($base . '/bin/ext/php_gd.dll') === 'new-gd'
+        && str_contains((string) file_get_contents($base . '/bin/php.ini'), 'C:/mine/bin/ext');
+
+    // Same path with the target missing: the rename fallback is what saves a locked file, so a
+    // plain copy has to take it first (no .old left behind).
+    $ok = $ok && $stale === [];
+
+    locadev_rm_tree($base);
+    return $ok && !is_dir($base);
+})());
+
 ob_end_flush();
 echo $fail === 0 ? "\nALL CHECKS PASSED\n" : "\n$fail CHECK(S) FAILED\n";
 exit($fail === 0 ? 0 : 1);
